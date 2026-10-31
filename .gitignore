@@ -40,3 +40,4 @@ sdks/typescript/dist/
 # Distribution
 *.whl
 *.tar.gz
+mcp-publisher.exe

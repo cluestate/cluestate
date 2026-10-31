@@ -1,0 +1,17 @@
+# Smithery MCP Server Configuration
+# Enables one-click installation into Claude Desktop, Cursor, and Cline
+# https://smithery.ai/docs/config
+
+startCommand:
+  type: stdio
+  config:
+    command: "cluestate"
+    args: ["mcp"]
+    env:
+      CLUESTATE_API_URL:
+        type: string
+        description: "ClueState API URL (e.g. https://app.cluestate.com or http://localhost:8000)"
+        default: "https://app.cluestate.com"
+      CLUESTATE_API_KEY:
+        type: string
+        description: "Your ClueState workspace API key (cs_live_...)"

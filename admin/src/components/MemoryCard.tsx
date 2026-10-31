@@ -8,6 +8,8 @@ import {
   ChevronUp,
   Tag,
   Clock,
+  ShieldCheck,
+  AlertTriangle,
 } from 'lucide-react';
 import type { Memory, MemoryStatus } from '../types';
 import { ConfidenceBar } from './ConfidenceBar';
@@ -80,13 +82,18 @@ export const MemoryCard: React.FC<MemoryCardProps> = ({
             </div>
           )}
           <div className="memory-claim">{memory.claim}</div>
+          {memory.value && (
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+              Value: <code style={{ color: 'var(--text-secondary)' }}>{memory.value}</code>
+            </div>
+          )}
         </div>
 
         <div className="memory-actions">
           {onUpdateStatus && memory.status !== 'confirmed' && (
             <button
               className="btn btn-ghost btn-sm"
-              title="Confirm fact"
+              title="Confirm claim"
               onClick={() => onUpdateStatus(memory.id, 'confirmed')}
               style={{ color: 'var(--success)' }}
             >
@@ -96,7 +103,7 @@ export const MemoryCard: React.FC<MemoryCardProps> = ({
           {onUpdateStatus && memory.status !== 'rejected' && (
             <button
               className="btn btn-ghost btn-sm"
-              title="Reject fact"
+              title="Reject claim"
               onClick={() => onUpdateStatus(memory.id, 'rejected')}
               style={{ color: 'var(--danger)' }}
             >
@@ -106,7 +113,7 @@ export const MemoryCard: React.FC<MemoryCardProps> = ({
           {onDelete && (
             <button
               className="btn btn-ghost btn-sm"
-              title="Delete memory"
+              title="Delete claim"
               onClick={() => onDelete(memory.id)}
               style={{ color: 'var(--text-muted)' }}
             >
@@ -119,6 +126,13 @@ export const MemoryCard: React.FC<MemoryCardProps> = ({
       <div className="memory-meta">
         {/* Status Badge */}
         {getStatusBadge(memory.status)}
+
+        {/* Claim Type Badge */}
+        {memory.claim_type && (
+          <span className="badge badge-neutral" style={{ fontSize: '11px', textTransform: 'capitalize' }}>
+            {memory.claim_type}
+          </span>
+        )}
 
         {/* Topic Tag */}
         {memory.topic_name && (
@@ -172,7 +186,7 @@ export const MemoryCard: React.FC<MemoryCardProps> = ({
           >
             <Quote size={13} />
             <span>
-              {memory.evidence.length} Source Evidence Quote{memory.evidence.length > 1 ? 's' : ''}
+              {memory.evidence.length} Source Evidence Excerpt{memory.evidence.length > 1 ? 's' : ''}
             </span>
             {showEvidence ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
           </button>
@@ -180,8 +194,36 @@ export const MemoryCard: React.FC<MemoryCardProps> = ({
           {showEvidence && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px' }}>
               {memory.evidence.map((ev, i) => (
-                <div key={ev.id || i} className="memory-evidence">
-                  &ldquo;{ev.excerpt}&rdquo;
+                <div
+                  key={ev.id || i}
+                  className="memory-evidence"
+                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}
+                >
+                  <span>&ldquo;{ev.excerpt}&rdquo;</span>
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      fontSize: '11px',
+                      flexShrink: 0,
+                      color: ev.is_verified ? 'var(--success)' : 'var(--warning)',
+                    }}
+                  >
+                    {ev.is_verified ? (
+                      <>
+                        <ShieldCheck size={12} />
+                        <span>
+                          Verified{ev.char_start != null ? ` [${ev.char_start}:${ev.char_end}]` : ''}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <AlertTriangle size={12} />
+                        <span>Unverified</span>
+                      </>
+                    )}
+                  </span>
                 </div>
               ))}
             </div>

@@ -1,7 +1,9 @@
 """Configuration via environment variables with sensible defaults."""
 
-from pydantic_settings import BaseSettings
+import secrets
 from functools import lru_cache
+
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -18,18 +20,23 @@ class Settings(BaseSettings):
     # ─── Database ───
     database_url: str = "sqlite+aiosqlite:///./cluestate.db"
 
-    # ─── Server ───
+    # ─── Server & Platform ───
     host: str = "0.0.0.0"
     port: int = 8000
     log_level: str = "info"
+    app_url: str = "https://app.cluestate.com"
+    cors_origins: str = "https://app.cluestate.com,https://cluestate.com,http://localhost:5173,http://localhost:8000"
 
-    # ─── Security ───
-    api_key: str = ""  # If set, all requests require this key in Authorization header
+    # ─── Security & Authentication ───
+    secret_key: str = secrets.token_urlsafe(32)
+    access_token_expire_minutes: int = 60 * 24 * 7  # 7 days
+    api_key: str = ""  # Optional static master API key for single-tenant / CLI automation
 
-    # ─── Extraction tuning ───
+    # ─── Extraction Tuning ───
     max_retries: int = 2
     default_confidence: float = 0.5
-    conflict_threshold: float = 0.7  # Confidence above which a new claim supersedes an old one
+    conflict_threshold: float = 0.7
+    max_context_memories: int = 50
 
     model_config = {
         "env_file": ".env",
@@ -41,6 +48,12 @@ class Settings(BaseSettings):
     @property
     def is_sqlite(self) -> bool:
         return "sqlite" in self.database_url
+
+    @property
+    def parsed_cors_origins(self) -> list[str]:
+        if not self.cors_origins or self.cors_origins.strip() == "*":
+            return ["*"]
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
 
     @property
     def sync_database_url(self) -> str:

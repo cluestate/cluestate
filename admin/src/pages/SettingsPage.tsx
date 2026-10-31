@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Code2,
   Copy,
@@ -6,35 +6,68 @@ import {
   Key,
   BookOpen,
   Server,
-  ShieldCheck,
+  Plus,
+  Trash2,
 } from 'lucide-react';
-import type { HealthInfo } from '../types';
+import type { ApiKeyItem, HealthInfo } from '../types';
+import { api } from '../api';
 
 interface SettingsPageProps {
   health: HealthInfo | null;
   onRefreshHealth: () => void;
+  initialNewKey?: string | null;
 }
 
 export const SettingsPage: React.FC<SettingsPageProps> = ({
   health,
-  onRefreshHealth,
+  initialNewKey,
 }) => {
-  const [apiKey, setApiKey] = useState(
-    localStorage.getItem('cluestate_api_key') || ''
-  );
-  const [isSaved, setIsSaved] = useState(false);
+  const [apiKeys, setApiKeys] = useState<ApiKeyItem[]>([]);
+  const [newKeyName, setNewKeyName] = useState('');
+  const [newlyCreatedKey, setNewlyCreatedKey] = useState<string | null>(initialNewKey || null);
+  const [isCreatingKey, setIsCreatingKey] = useState(false);
+  const [copiedNewKey, setCopiedNewKey] = useState(false);
+
   const [copiedSnippet, setCopiedSnippet] = useState<string | null>(null);
   const [selectedLang, setSelectedLang] = useState<'python' | 'ts' | 'php' | 'curl'>('python');
 
-  const handleSaveApiKey = () => {
-    if (apiKey.trim()) {
-      localStorage.setItem('cluestate_api_key', apiKey.trim());
-    } else {
-      localStorage.removeItem('cluestate_api_key');
+  const fetchApiKeys = async () => {
+    try {
+      const keys = await api.listApiKeys();
+      setApiKeys(keys);
+    } catch {
+      // Ignore if authenticated via static master key without DB keys
     }
-    setIsSaved(true);
-    onRefreshHealth();
-    setTimeout(() => setIsSaved(false), 2000);
+  };
+
+  useEffect(() => {
+    fetchApiKeys();
+  }, []);
+
+  const handleCreateKey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newKeyName.trim()) return;
+    try {
+      setIsCreatingKey(true);
+      const created = await api.createApiKey(newKeyName.trim());
+      setNewlyCreatedKey(created.raw_key);
+      setNewKeyName('');
+      await fetchApiKeys();
+    } catch (err: any) {
+      alert(err.message || 'Failed to create API key');
+    } finally {
+      setIsCreatingKey(false);
+    }
+  };
+
+  const handleRevokeKey = async (keyId: number) => {
+    if (!confirm('Revoke this API key? Applications using it will immediately lose access.')) return;
+    try {
+      await api.revokeApiKey(keyId);
+      await fetchApiKeys();
+    } catch (err: any) {
+      alert(err.message || 'Failed to revoke API key');
+    }
   };
 
   const handleCopy = (snippet: string, id: string) => {
@@ -43,97 +76,240 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     setTimeout(() => setCopiedSnippet(null), 1500);
   };
 
+  const handleCopyNewKey = () => {
+    if (!newlyCreatedKey) return;
+    navigator.clipboard.writeText(newlyCreatedKey);
+    setCopiedNewKey(true);
+    setTimeout(() => setCopiedNewKey(false), 2000);
+  };
+
+  const baseUrl =
+    typeof window !== 'undefined' && window.location.origin
+      ? `${window.location.origin}/api`
+      : 'https://app.cluestate.com/api';
+
   const codeSnippets = {
-    python: `# Ingest unstructured text into ClueState
-import requests
+    python: `# Ingest customer interactions into ClueState
+import httpx
 
-api_url = "http://localhost:8000/api"
-headers = {"Authorization": "Bearer YOUR_API_KEY"}  # if configured
+api_url = "${baseUrl}"
+headers = {"Authorization": "Bearer cs_live_YOUR_API_KEY"}
 
-# 1. Ingest an interaction & extract facts
-res = requests.post(f"{api_url}/ingest", headers=headers, json={
+# 1. Ingest an interaction & extract verified claims
+res = httpx.post(f"{api_url}/ingest", headers=headers, json={
     "external_id": "cust_123",
     "entity_name": "Alice Chen",
-    "content": "Alice prefers Dark Mode and has a hard budget cap of $5,000/mo.",
-    "source_type": "conversation"
+    "content": "Alice prefers Dark Mode and confirmed an annual budget of $50,000.",
+    "source_type": "conversation",
+    "idempotency_key": "evt_2026_10_31_001"
 })
 print("Extracted claims:", res.json()["memories"])
 
-# 2. Fetch formatted intelligence for LLM system prompt
-intel = requests.get(f"{api_url}/intel/by-external-id/cust_123", headers=headers).json()
-system_prompt = f"You are a helpful assistant.\\\\n\\\\n{intel['formatted_prompt']}"`,
+# 2. Retrieve structured customer state
+intel = httpx.get(f"{api_url}/intel/by-external-id/cust_123", headers=headers).json()
+print(intel["formatted_prompt"])`,
 
     ts: `// Node.js / TypeScript Integration
-const API_URL = 'http://localhost:8000/api';
+const API_URL = '${baseUrl}';
+const HEADERS = {
+  'Content-Type': 'application/json',
+  'Authorization': 'Bearer cs_live_YOUR_API_KEY',
+};
 
-// 1. Ingest unstructured dialogue
+// 1. Ingest interaction
 const ingestRes = await fetch(\`\${API_URL}/ingest\`, {
   method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
+  headers: HEADERS,
   body: JSON.stringify({
     external_id: 'user_456',
     entity_name: 'Bob Miller',
-    content: 'User mentioned they run PostgreSQL on AWS and prefer daily SMS summaries.',
+    content: 'Customer runs PostgreSQL on AWS and requested weekly email reports.',
     source_type: 'support_ticket',
   }),
 });
 const { memories } = await ingestRes.json();
 
-// 2. Fetch formatted intelligence prompt
-const intelRes = await fetch(\`\${API_URL}/intel/by-external-id/user_456\`);
-const { formatted_prompt } = await intelRes.json();
-console.log('LLM Prompt Intel:\\\\n', formatted_prompt);`,
+// 2. Fetch structured customer state
+const intelRes = await fetch(\`\${API_URL}/intel/by-external-id/user_456\`, {
+  headers: HEADERS,
+});
+const { formatted_prompt } = await intelRes.json();`,
 
     php: `<?php
 // PHP cURL Integration
-$apiUrl = 'http://localhost:8000/api';
+$apiUrl = '${baseUrl}';
+$headers = [
+    'Content-Type: application/json',
+    'Authorization: Bearer cs_live_YOUR_API_KEY',
+];
 
 // 1. Ingest interaction
 $ch = curl_init("$apiUrl/ingest");
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($ch, CURLOPT_POST, true);
-curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
 curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode([
     'external_id' => 'user_789',
     'entity_name' => 'Carla Diaz',
-    'content' => 'Customer requested gluten-free catering and vegan snacks.',
-    'source_type' => 'email'
+    'content' => 'Customer prefers Salomon trail-running shoes in size EU 39.',
+    'source_type' => 'purchase'
 ]));
 $response = json_decode(curl_exec($ch), true);
-curl_close($ch);
+curl_close($ch);`,
 
-// 2. Retrieve formatted intelligence
-$intelJson = file_get_contents("$apiUrl/intel/by-external-id/user_789");
-$intel = json_decode($intelJson, true);
-$llmPromptBlock = $intel['formatted_prompt'];`,
-
-    curl: `# 1. Ingest interaction & extract claims
-curl -X POST http://localhost:8000/api/ingest \\
+    curl: `# 1. Ingest interaction & extract verified claims
+curl -X POST ${baseUrl}/ingest \\
+  -H "Authorization: Bearer cs_live_YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
     "external_id": "cust_101",
     "entity_name": "Devin Torres",
-    "content": "Devin loves Kubernetes and needs SOC2 compliance.",
+    "content": "Devin migrated from AWS to GCP in October and requires SOC2 compliance.",
     "source_type": "conversation"
   }'
 
-# 2. Get ready-to-use LLM system prompt block
-curl http://localhost:8000/api/intel/by-external-id/cust_101`,
+# 2. Retrieve structured customer state
+curl ${baseUrl}/intel/by-external-id/cust_101 \\
+  -H "Authorization: Bearer cs_live_YOUR_API_KEY"`,
   };
 
   return (
     <div className="page-container">
       {/* Header */}
       <div className="page-header">
-        <h1 className="page-title">API & Engine Settings</h1>
+        <h1 className="page-title">API Keys & Integration</h1>
         <p className="page-subtitle">
-          Integration code snippets, authentication, and engine runtime configuration.
+          Manage workspace API keys, inspect runtime specifications, and copy integration snippets.
         </p>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '24px' }}>
-        {/* Left Column: Code Integration Snippets */}
-        <div>
+      {/* Newly Created Key Banner */}
+      {newlyCreatedKey && (
+        <div
+          className="card mb-6"
+          style={{
+            borderColor: 'var(--success)',
+            background: 'rgba(16, 185, 129, 0.08)',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+            <div>
+              <div style={{ fontWeight: 600, fontSize: '14px', color: 'var(--success)', marginBottom: '4px' }}>
+                Save your new API Key now
+              </div>
+              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                For security reasons, this full secret key will only be shown once:
+              </div>
+              <code
+                style={{
+                  display: 'inline-block',
+                  padding: '8px 12px',
+                  background: 'var(--bg-primary)',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--border-subtle)',
+                  color: 'var(--text-primary)',
+                  fontSize: '13px',
+                }}
+              >
+                {newlyCreatedKey}
+              </code>
+            </div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button className="btn btn-primary btn-sm" onClick={handleCopyNewKey}>
+                {copiedNewKey ? <Check size={14} /> : <Copy size={14} />}
+                <span>{copiedNewKey ? 'Copied!' : 'Copy Secret Key'}</span>
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setNewlyCreatedKey(null)}>
+                Dismiss
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1.35fr 1fr', gap: '24px' }}>
+        {/* Left Column: Workspace API Keys & Snippets */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          {/* Workspace API Keys */}
+          <div className="card">
+            <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+              <Key size={18} color="var(--accent-primary)" />
+              Workspace API Keys
+            </h3>
+            <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '16px' }}>
+              Use scoped API keys in the <code>Authorization: Bearer cs_live_...</code> header when calling ClueState from your backend or MCP client.
+            </p>
+
+            <form
+              onSubmit={handleCreateKey}
+              style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}
+            >
+              <input
+                type="text"
+                className="input"
+                placeholder="Key name (e.g. Production Backend, CRM Webhook)"
+                value={newKeyName}
+                onChange={(e) => setNewKeyName(e.target.value)}
+                required
+              />
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={isCreatingKey}
+                style={{ flexShrink: 0 }}
+              >
+                <Plus size={15} />
+                <span>{isCreatingKey ? 'Creating...' : 'Create Key'}</span>
+              </button>
+            </form>
+
+            <div className="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Key Prefix</th>
+                    <th>Created</th>
+                    <th style={{ textAlign: 'right' }}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {apiKeys.map((k) => (
+                    <tr key={k.id}>
+                      <td style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{k.name}</td>
+                      <td>
+                        <code style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                          {k.key_prefix}...
+                        </code>
+                      </td>
+                      <td style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                        {new Date(k.created_at).toLocaleDateString()}
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          style={{ color: 'var(--danger)' }}
+                          onClick={() => handleRevokeKey(k.id)}
+                          title="Revoke key"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {apiKeys.length === 0 && (
+                    <tr>
+                      <td colSpan={4} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '20px' }}>
+                        No workspace API keys found. Create one above.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Code Snippets */}
           <div className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <h3 className="card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -193,44 +369,8 @@ curl http://localhost:8000/api/intel/by-external-id/cust_101`,
           </div>
         </div>
 
-        {/* Right Column: Engine Status & Auth */}
+        {/* Right Column: Engine Specifications */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          {/* API Key Config */}
-          <div className="card">
-            <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Key size={18} color="var(--warning)" />
-              Dashboard API Key Auth
-            </h3>
-            <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '16px' }}>
-              If your ClueState server is configured with an <code>API_KEY</code> or <code>CLUESTATE_API_KEY</code>, enter it below to authenticate dashboard requests.
-            </p>
-
-            <div className="input-group">
-              <input
-                type="password"
-                className="input"
-                placeholder="Bearer token (optional)"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-              />
-            </div>
-
-            <button className="btn btn-primary" onClick={handleSaveApiKey}>
-              {isSaved ? (
-                <>
-                  <Check size={14} />
-                  <span>Key Saved!</span>
-                </>
-              ) : (
-                <>
-                  <ShieldCheck size={14} />
-                  <span>Save API Key</span>
-                </>
-              )}
-            </button>
-          </div>
-
-          {/* Engine Environment */}
           <div className="card">
             <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Server size={18} color="var(--success)" />

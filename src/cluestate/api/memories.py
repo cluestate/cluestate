@@ -1,13 +1,16 @@
-"""Memory management and entity intel endpoints."""
+"""Memory management and entity intelligence endpoints scoped to the active workspace."""
+
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_session
 from ..engine import format_entity_intel
-from ..models import Entity, Episode, Evidence, Memory, MemoryStatus, Topic
+from ..models import Entity, Episode, Evidence, Memory, MemoryStatus, Topic, Workspace
 from ..schemas import EvidenceRead, IntelResponse, MemoryRead, MemoryUpdate
+from ..security import get_current_workspace
 
 router = APIRouter(tags=["Memories"])
 
@@ -21,18 +24,18 @@ async def list_entity_memories(
     entity_id: int,
     status: MemoryStatus | None = Query(None, description="Filter by status"),
     topic_id: int | None = Query(None, description="Filter by topic"),
+    workspace: Workspace = Depends(get_current_workspace),
     session: AsyncSession = Depends(get_session),
 ):
-    """List memories for an entity with optional filters."""
+    """List memories for an entity with optional status and topic filters."""
     entity = await session.get(Entity, entity_id)
-    if not entity:
+    if not entity or entity.workspace_id != workspace.id:
         raise HTTPException(status_code=404, detail="Entity not found")
 
     query = select(Memory).where(Memory.entity_id == entity_id)
     if status:
         query = query.where(Memory.status == status)
     else:
-        # Default: show active + confirmed
         query = query.where(Memory.status.in_([MemoryStatus.ACTIVE, MemoryStatus.CONFIRMED]))
     if topic_id:
         query = query.where(Memory.topic_id == topic_id)
@@ -41,7 +44,6 @@ async def list_entity_memories(
     result = await session.execute(query)
     memories = result.scalars().all()
 
-    # Fetch topic names and evidence
     response = []
     for m in memories:
         topic_name = None
@@ -50,7 +52,6 @@ async def list_entity_memories(
             if topic:
                 topic_name = topic.name
 
-        # Fetch evidence
         ev_result = await session.execute(
             select(Evidence).where(Evidence.memory_id == m.id)
         )
@@ -72,16 +73,18 @@ async def list_entity_memories(
 async def update_memory(
     memory_id: int,
     body: MemoryUpdate,
+    workspace: Workspace = Depends(get_current_workspace),
     session: AsyncSession = Depends(get_session),
 ):
     """Update a memory's status (confirm, reject) or confidence."""
     memory = await session.get(Memory, memory_id)
-    if not memory:
+    if not memory or memory.workspace_id != workspace.id:
         raise HTTPException(status_code=404, detail="Memory not found")
 
     update_data = body.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(memory, key, value)
+    memory.updated_at = datetime.now(timezone.utc)
 
     await session.commit()
     await session.refresh(memory)
@@ -92,38 +95,53 @@ async def update_memory(
         if topic:
             topic_name = topic.name
 
-    return MemoryRead(**memory.model_dump(), topic_name=topic_name, evidence=[])
+    ev_result = await session.execute(select(Evidence).where(Evidence.memory_id == memory.id))
+    evidence = [EvidenceRead(**e.model_dump()) for e in ev_result.scalars().all()]
+
+    return MemoryRead(**memory.model_dump(), topic_name=topic_name, evidence=evidence)
 
 
 @router.delete("/memories/{memory_id}", status_code=204, tags=["Memories"])
-async def delete_memory(memory_id: int, session: AsyncSession = Depends(get_session)):
-    """Hard-delete a memory."""
+async def delete_memory(
+    memory_id: int,
+    workspace: Workspace = Depends(get_current_workspace),
+    session: AsyncSession = Depends(get_session),
+):
+    """Transactionally delete a memory and all linked evidence records."""
     memory = await session.get(Memory, memory_id)
-    if not memory:
+    if not memory or memory.workspace_id != workspace.id:
         raise HTTPException(status_code=404, detail="Memory not found")
+
+    # Clear any foreign key reference from superseded memories
+    await session.execute(
+        update(Memory)
+        .where(Memory.superseded_by_id == memory_id)
+        .values(superseded_by_id=None)
+    )
+    # Delete linked evidence rows
+    await session.execute(delete(Evidence).where(Evidence.memory_id == memory_id))
 
     await session.delete(memory)
     await session.commit()
 
 
 # ──────────────────────────────────────────────
-# Entity Intel — Formatted for AI Prompts
+# Entity Intel — Structured State Block
 # ──────────────────────────────────────────────
 
 @router.get("/entities/{entity_id}/intel", response_model=IntelResponse, tags=["Intel"])
-async def get_entity_intel(entity_id: int, session: AsyncSession = Depends(get_session)):
-    """
-    Get formatted entity intelligence ready to paste into AI system prompts.
-
-    Returns a pre-formatted text block + structured memory data.
-    """
+async def get_entity_intel(
+    entity_id: int,
+    workspace: Workspace = Depends(get_current_workspace),
+    session: AsyncSession = Depends(get_session),
+):
+    """Get formatted entity state and structured memory list."""
     entity = await session.get(Entity, entity_id)
-    if not entity:
+    if not entity or entity.workspace_id != workspace.id:
         raise HTTPException(status_code=404, detail="Entity not found")
 
     formatted = await format_entity_intel(session, entity)
 
-    # Get counts
     mem_result = await session.execute(
         select(func.count()).where(
             Memory.entity_id == entity.id,
@@ -134,7 +152,6 @@ async def get_entity_intel(entity_id: int, session: AsyncSession = Depends(get_s
         select(func.count()).where(Episode.entity_id == entity.id)
     )
 
-    # Get memory list
     result = await session.execute(
         select(Memory)
         .where(
@@ -159,14 +176,21 @@ async def get_entity_intel(entity_id: int, session: AsyncSession = Depends(get_s
 @router.get("/intel/by-external-id/{external_id}", response_model=IntelResponse, tags=["Intel"])
 async def get_entity_intel_by_external_id(
     external_id: str,
+    workspace: Workspace = Depends(get_current_workspace),
     session: AsyncSession = Depends(get_session),
 ):
-    """Get entity intel by your app's external ID (convenience endpoint)."""
+    """Get entity intelligence by your application's external ID within the active workspace."""
     result = await session.execute(
-        select(Entity).where(Entity.external_id == external_id)
+        select(Entity).where(
+            Entity.workspace_id == workspace.id,
+            Entity.external_id == external_id,
+        )
     )
     entity = result.scalars().first()
     if not entity:
-        raise HTTPException(status_code=404, detail=f"Entity with external_id '{external_id}' not found")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Entity with external_id '{external_id}' not found in this workspace",
+        )
 
-    return await get_entity_intel(entity.id, session)
+    return await get_entity_intel(entity.id, workspace, session)

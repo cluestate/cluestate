@@ -7,43 +7,132 @@ import {
   CheckCircle,
   Layers,
 } from 'lucide-react';
-import type { Topic } from '../types';
+import type { Topic, TopicCardinality, UpdatePolicy } from '../types';
 import { api } from '../api';
 import { TopicModal } from '../components/TopicModal';
 
-const PRESET_BUNDLES = [
+const PRESET_BUNDLES: {
+  id: string;
+  title: string;
+  description: string;
+  topics: {
+    name: string;
+    description: string;
+    data_type: string;
+    cardinality: TopicCardinality;
+    update_policy: UpdatePolicy;
+  }[];
+}[] = [
   {
     id: 'saas',
     title: 'SaaS & B2B Sales',
     description: 'Track prospect tech stacks, pain points, budget authority, and renewal dates.',
     topics: [
-      { name: 'pain_points', description: 'Business challenges, friction, and bottlenecks mentioned by the client.', data_type: 'list' },
-      { name: 'tech_stack', description: 'Tools, platforms, programming languages, and databases currently used.', data_type: 'list' },
-      { name: 'budget', description: 'Budget constraints, spend limits, or pricing discussions.', data_type: 'text' },
-      { name: 'decision_maker', description: 'Key decision makers, champions, and organizational stakeholders.', data_type: 'text' },
-      { name: 'renewal_timeline', description: 'Contract renewal dates, evaluation milestones, and deadlines.', data_type: 'text' },
+      {
+        name: 'pain_points',
+        description: 'Business challenges, friction, and bottlenecks mentioned by the client.',
+        data_type: 'list',
+        cardinality: 'multiple',
+        update_policy: 'append',
+      },
+      {
+        name: 'tech_stack',
+        description: 'Tools, platforms, programming languages, and databases currently used.',
+        data_type: 'list',
+        cardinality: 'multiple',
+        update_policy: 'append',
+      },
+      {
+        name: 'budget',
+        description: 'Current approved budget cap or contract spend target.',
+        data_type: 'number',
+        cardinality: 'single',
+        update_policy: 'replace',
+      },
+      {
+        name: 'decision_maker',
+        description: 'Primary decision maker or executive sponsor.',
+        data_type: 'text',
+        cardinality: 'single',
+        update_policy: 'replace',
+      },
+      {
+        name: 'renewal_timeline',
+        description: 'Target contract renewal date or evaluation deadline.',
+        data_type: 'text',
+        cardinality: 'single',
+        update_policy: 'replace',
+      },
     ],
   },
   {
     id: 'ecommerce',
     title: 'E-Commerce & Retail',
-    description: 'Personalize shopping with sizing, style tastes, and price sensitivity.',
+    description: 'Maintain customer brand preferences, sizing, and price sensitivity.',
     topics: [
-      { name: 'preferences', description: 'General likes, dislikes, favorite categories, and brands.', data_type: 'list' },
-      { name: 'sizing', description: 'Clothing sizes, shoe sizes, or physical fit specifications.', data_type: 'text' },
-      { name: 'price_sensitivity', description: 'Budget orientation (bargain hunter, premium, luxury).', data_type: 'text' },
-      { name: 'dietary_restrictions', description: 'Allergies, vegan, kosher, gluten-free, or specific dietary choices.', data_type: 'list' },
+      {
+        name: 'brand_preferences',
+        description: 'Preferred brands, product lines, and style categories.',
+        data_type: 'list',
+        cardinality: 'multiple',
+        update_policy: 'append',
+      },
+      {
+        name: 'sizing',
+        description: 'Current clothing or footwear size specifications.',
+        data_type: 'text',
+        cardinality: 'single',
+        update_policy: 'replace',
+      },
+      {
+        name: 'price_sensitivity',
+        description: 'Budget orientation (value, mid-tier, premium).',
+        data_type: 'text',
+        cardinality: 'single',
+        update_policy: 'replace',
+      },
+      {
+        name: 'delivery_preferences',
+        description: 'Preferred shipping carrier, delivery window, or packaging instructions.',
+        data_type: 'list',
+        cardinality: 'multiple',
+        update_policy: 'append',
+      },
     ],
   },
   {
-    id: 'hospitality',
-    title: 'Hospitality & Travel',
-    description: 'VIP guest preferences, room requests, and loyalty tracking.',
+    id: 'support',
+    title: 'Customer Support & Success',
+    description: 'Track communication preferences, recurring issues, and account tier.',
     topics: [
-      { name: 'room_preferences', description: 'High floor, quiet room, king bed, extra pillows, foam mattress.', data_type: 'list' },
-      { name: 'dietary_needs', description: 'Food allergies, dietary rules, favorite breakfast items or drinks.', data_type: 'list' },
-      { name: 'special_occasions', description: 'Birthdays, anniversaries, honeymoons, or celebrations.', data_type: 'text' },
-      { name: 'loyalty_status', description: 'Frequent traveler programs, loyalty numbers, and VIP tiers.', data_type: 'text' },
+      {
+        name: 'communication_channel',
+        description: 'Preferred contact method (email, Slack, phone, SMS).',
+        data_type: 'text',
+        cardinality: 'single',
+        update_policy: 'replace',
+      },
+      {
+        name: 'known_workflows',
+        description: 'Key workflows and integrations the customer relies on.',
+        data_type: 'list',
+        cardinality: 'multiple',
+        update_policy: 'append',
+      },
+      {
+        name: 'past_issues',
+        description: 'Previously reported technical issues and verified resolutions.',
+        data_type: 'list',
+        cardinality: 'multiple',
+        update_policy: 'append',
+      },
+      {
+        name: 'account_tier',
+        description: 'Current subscription plan or service level.',
+        data_type: 'text',
+        cardinality: 'single',
+        update_policy: 'replace',
+      },
     ],
   },
 ];
@@ -94,7 +183,6 @@ export const TopicsPage: React.FC = () => {
     try {
       setSeedingBundle(bundle.id);
       for (const t of bundle.topics) {
-        // Skip if already exists
         const exists = topics.some((existing) => existing.name === t.name);
         if (!exists) {
           try {
@@ -117,9 +205,9 @@ export const TopicsPage: React.FC = () => {
       {/* Header */}
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
         <div>
-          <h1 className="page-title">Memory Topics & Schemas</h1>
+          <h1 className="page-title">Customer State Schemas</h1>
           <p className="page-subtitle">
-            Define categories and prompt guidelines for the LLM to classify and structure atomic memories.
+            Define typed attributes, cardinality (single vs. multiple), and conflict resolution policies.
           </p>
         </div>
 
@@ -131,7 +219,7 @@ export const TopicsPage: React.FC = () => {
           }}
         >
           <Plus size={16} />
-          <span>Add Topic</span>
+          <span>Add Schema Topic</span>
         </button>
       </div>
 
@@ -140,11 +228,11 @@ export const TopicsPage: React.FC = () => {
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
           <Sparkles size={18} color="var(--accent-primary)" />
           <h3 style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
-            Quick Start: Pre-built Domain Bundles
+            Domain Schema Bundles
           </h3>
         </div>
         <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
-          One-click presets tailored with tested LLM prompts for different industry verticals.
+          Pre-configured topic schemas with appropriate cardinality and replacement rules.
         </p>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
@@ -184,7 +272,7 @@ export const TopicsPage: React.FC = () => {
                           borderRadius: '4px',
                         }}
                       >
-                        #{t.name}
+                        #{t.name} ({t.cardinality})
                       </span>
                     ))}
                   </div>
@@ -222,8 +310,9 @@ export const TopicsPage: React.FC = () => {
           <thead>
             <tr>
               <th>Topic Slug</th>
-              <th>LLM Extraction Instructions</th>
-              <th>Data Type</th>
+              <th>Extraction Instructions</th>
+              <th>Type</th>
+              <th>Cardinality & Policy</th>
               <th>Status</th>
               <th style={{ textAlign: 'right' }}>Actions</th>
             </tr>
@@ -232,22 +321,20 @@ export const TopicsPage: React.FC = () => {
             {topics.map((topic) => (
               <tr key={topic.id}>
                 <td>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <code
-                      style={{
-                        background: 'rgba(99, 102, 241, 0.15)',
-                        color: 'var(--accent-primary-hover)',
-                        fontWeight: 600,
-                        padding: '3px 8px',
-                        borderRadius: '4px',
-                        fontSize: '13px',
-                      }}
-                    >
-                      #{topic.name}
-                    </code>
-                  </div>
+                  <code
+                    style={{
+                      background: 'rgba(99, 102, 241, 0.15)',
+                      color: 'var(--accent-primary-hover)',
+                      fontWeight: 600,
+                      padding: '3px 8px',
+                      borderRadius: '4px',
+                      fontSize: '13px',
+                    }}
+                  >
+                    #{topic.name}
+                  </code>
                 </td>
-                <td style={{ maxWidth: '400px' }}>
+                <td style={{ maxWidth: '360px' }}>
                   <div
                     style={{
                       fontSize: '13px',
@@ -261,6 +348,11 @@ export const TopicsPage: React.FC = () => {
                 <td>
                   <span className="badge badge-neutral" style={{ textTransform: 'uppercase', fontSize: '11px' }}>
                     {topic.data_type}
+                  </span>
+                </td>
+                <td>
+                  <span className="badge badge-info" style={{ fontSize: '11px' }}>
+                    {topic.cardinality || 'multiple'} &bull; {topic.update_policy || 'append'}
                   </span>
                 </td>
                 <td>
@@ -299,9 +391,9 @@ export const TopicsPage: React.FC = () => {
         {topics.length === 0 && !isLoading && (
           <div className="empty-state">
             <Tags className="empty-state-icon" />
-            <h4 className="empty-state-title">No Topics Defined</h4>
+            <h4 className="empty-state-title">No Schema Topics Defined</h4>
             <p className="empty-state-text">
-              Install a pre-built domain bundle above or create custom memory categories.
+              Install a domain bundle above or create custom state categories.
             </p>
           </div>
         )}

@@ -1,4 +1,4 @@
-# Stage 1: Build React Admin Dashboard
+# Stage 1: Build React Platform UI
 FROM node:20-alpine AS admin-builder
 
 WORKDIR /app/admin
@@ -24,11 +24,11 @@ COPY pyproject.toml .
 COPY README.md .
 COPY src/ src/
 
-# Copy compiled Admin UI from stage 1
+# Copy compiled Platform UI from stage 1
 COPY --from=admin-builder /app/src/cluestate/static/ src/cluestate/static/
 
-# Install Python package
-RUN pip install --no-cache-dir .
+# Install Python package including PostgreSQL driver support
+RUN pip install --no-cache-dir ".[postgres]"
 
 # Create data directory for persistent SQLite volumes
 RUN mkdir -p /app/data

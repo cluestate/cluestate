@@ -1,54 +1,68 @@
-"""System and dashboard overview statistics."""
+"""System and dashboard overview statistics scoped to the active workspace."""
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_session
-from ..models import Entity, Episode, Memory, MemoryStatus, Topic
+from ..models import Entity, Episode, Memory, MemoryStatus, Topic, Workspace
+from ..security import get_current_workspace
 
 router = APIRouter(prefix="/stats", tags=["System"])
 
 
 @router.get("")
-async def get_dashboard_stats(session: AsyncSession = Depends(get_session)):
-    """Return overview metrics and recent activity for the admin dashboard."""
-    # Entity count
-    res_entities = await session.execute(select(func.count(Entity.id)))
+async def get_dashboard_stats(
+    workspace: Workspace = Depends(get_current_workspace),
+    session: AsyncSession = Depends(get_session),
+):
+    """Return overview metrics and recent activity for the workspace dashboard."""
+    res_entities = await session.execute(
+        select(func.count(Entity.id)).where(Entity.workspace_id == workspace.id)
+    )
     total_entities = res_entities.scalar() or 0
 
-    # Memory counts (total and active)
-    res_total_mem = await session.execute(select(func.count(Memory.id)))
+    res_total_mem = await session.execute(
+        select(func.count(Memory.id)).where(Memory.workspace_id == workspace.id)
+    )
     total_memories = res_total_mem.scalar() or 0
 
     res_active_mem = await session.execute(
         select(func.count(Memory.id)).where(
-            Memory.status.in_([MemoryStatus.ACTIVE, MemoryStatus.CONFIRMED])
+            Memory.workspace_id == workspace.id,
+            Memory.status.in_([MemoryStatus.ACTIVE, MemoryStatus.CONFIRMED]),
         )
     )
     active_memories = res_active_mem.scalar() or 0
 
-    # Episode count
-    res_episodes = await session.execute(select(func.count(Episode.id)))
+    res_episodes = await session.execute(
+        select(func.count(Episode.id)).where(Episode.workspace_id == workspace.id)
+    )
     total_episodes = res_episodes.scalar() or 0
 
-    # Topic count
     res_topics = await session.execute(
-        select(func.count(Topic.id)).where(Topic.is_active == True)
+        select(func.count(Topic.id)).where(
+            Topic.workspace_id == workspace.id,
+            Topic.is_active == True,
+        )
     )
     total_topics = res_topics.scalar() or 0
 
-    # Status distribution
     status_counts = {}
     for st in MemoryStatus:
         res_st = await session.execute(
-            select(func.count(Memory.id)).where(Memory.status == st)
+            select(func.count(Memory.id)).where(
+                Memory.workspace_id == workspace.id,
+                Memory.status == st,
+            )
         )
         status_counts[st.value] = res_st.scalar() or 0
 
-    # Recent entities
     res_recent_entities = await session.execute(
-        select(Entity).order_by(Entity.created_at.desc()).limit(5)
+        select(Entity)
+        .where(Entity.workspace_id == workspace.id)
+        .order_by(Entity.created_at.desc())
+        .limit(5)
     )
     recent_entities = [
         {
@@ -61,11 +75,11 @@ async def get_dashboard_stats(session: AsyncSession = Depends(get_session)):
         for e in res_recent_entities.scalars().all()
     ]
 
-    # Recent memories with entity name and topic name
     res_recent_memories = await session.execute(
         select(Memory, Entity.name.label("entity_name"), Topic.name.label("topic_name"))
         .join(Entity, Memory.entity_id == Entity.id)
         .outerjoin(Topic, Memory.topic_id == Topic.id)
+        .where(Memory.workspace_id == workspace.id)
         .order_by(Memory.created_at.desc())
         .limit(6)
     )
@@ -80,16 +94,19 @@ async def get_dashboard_stats(session: AsyncSession = Depends(get_session)):
             "topic_name": row[2] or "General",
             "claim": mem.claim,
             "value": mem.value,
+            "claim_type": mem.claim_type.value if hasattr(mem.claim_type, "value") else str(mem.claim_type),
             "confidence": mem.confidence,
             "status": mem.status.value if hasattr(mem.status, "value") else str(mem.status),
             "created_at": mem.created_at.isoformat() if mem.created_at else None,
         })
 
-    # Topic distribution with memory counts
     res_topic_dist = await session.execute(
         select(Topic.name, func.count(Memory.id))
         .join(Memory, Topic.id == Memory.topic_id)
-        .where(Memory.status.in_([MemoryStatus.ACTIVE, MemoryStatus.CONFIRMED]))
+        .where(
+            Topic.workspace_id == workspace.id,
+            Memory.status.in_([MemoryStatus.ACTIVE, MemoryStatus.CONFIRMED]),
+        )
         .group_by(Topic.name)
         .order_by(func.count(Memory.id).desc())
         .limit(8)

@@ -1,12 +1,12 @@
-"""FastAPI application — the single entry point for API + Admin UI."""
+"""FastAPI application — unified entry point for the ClueState API and Platform UI."""
 
 import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
@@ -18,11 +18,13 @@ logger = logging.getLogger("cluestate")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup: create tables. Shutdown: close engine."""
+    """Startup: initialize database schema and default workspace. Shutdown: dispose engine."""
     settings = get_settings()
     logging.basicConfig(level=settings.log_level.upper())
     logger.info(f"ClueState v{__version__} starting up")
-    logger.info(f"Database: {settings.database_url.split('@')[-1] if '@' in settings.database_url else settings.database_url}")
+    logger.info(
+        f"Database: {settings.database_url.split('@')[-1] if '@' in settings.database_url else settings.database_url}"
+    )
     logger.info(f"LLM Model: {settings.llm_model}")
 
     await init_db()
@@ -39,8 +41,8 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="ClueState",
         description=(
-            "Plug-and-play Entity Memory & Intelligence Engine. "
-            "Extract structured knowledge from unstructured data via LLM-powered analysis."
+            "Customer Intelligence Infrastructure — extract, verify, and maintain "
+            "evidence-backed customer state across interactions."
         ),
         version=__version__,
         lifespan=lifespan,
@@ -51,42 +53,28 @@ def create_app() -> FastAPI:
     # ── CORS ──
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=settings.parsed_cors_origins,
         allow_credentials=True,
         allow_methods=["*"],
-        allow_headers=["*"],
+        allow_headers=["Authorization", "Content-Type", "Accept"],
     )
 
-    # ── Optional API Key Auth ──
-    if settings.api_key:
-        @app.middleware("http")
-        async def check_api_key(request: Request, call_next):
-            # Skip auth for docs and health
-            if request.url.path in ("/docs", "/redoc", "/openapi.json", "/api/health"):
-                return await call_next(request)
-            # Skip for static admin UI
-            if not request.url.path.startswith("/api/"):
-                return await call_next(request)
-
-            auth = request.headers.get("Authorization", "")
-            if auth != f"Bearer {settings.api_key}" and request.query_params.get("api_key") != settings.api_key:
-                return JSONResponse(status_code=401, content={"detail": "Invalid or missing API key"})
-            return await call_next(request)
-
     # ── API Routes ──
+    from .api.auth import router as auth_router
     from .api.entities import router as entities_router
-    from .api.topics import router as topics_router
     from .api.ingest import router as ingest_router
     from .api.memories import router as memories_router
     from .api.stats import router as stats_router
+    from .api.topics import router as topics_router
 
+    app.include_router(auth_router, prefix="/api")
     app.include_router(entities_router, prefix="/api")
     app.include_router(topics_router, prefix="/api")
     app.include_router(ingest_router, prefix="/api")
     app.include_router(memories_router, prefix="/api")
     app.include_router(stats_router, prefix="/api")
 
-    # ── Health Check ──
+    # ── Health Check (Public) ──
     @app.get("/api/health", tags=["System"])
     async def health():
         return {
@@ -96,17 +84,16 @@ def create_app() -> FastAPI:
             "database": "sqlite" if settings.is_sqlite else "postgresql",
         }
 
-    # ── Admin UI (compiled static files) ──
+    # ── Platform UI (compiled React SPA) ──
     static_dir = os.path.join(os.path.dirname(__file__), "static")
     if os.path.exists(static_dir) and os.path.exists(os.path.join(static_dir, "index.html")):
-        # Mount Vite-built assets
         assets_dir = os.path.join(static_dir, "assets")
         if os.path.exists(assets_dir):
             app.mount("/assets", StaticFiles(directory=assets_dir), name="static-assets")
 
         @app.get("/{full_path:path}", include_in_schema=False)
         async def serve_admin_spa(full_path: str):
-            """Serve the admin SPA. Falls back to index.html for client-side routing."""
+            """Serve the React SPA. Falls back to index.html for client-side routing."""
             target = os.path.join(static_dir, full_path)
             if full_path and os.path.isfile(target):
                 return FileResponse(target)
@@ -118,7 +105,7 @@ def create_app() -> FastAPI:
                 "name": "ClueState",
                 "version": __version__,
                 "docs": "/docs",
-                "admin_ui": "Not installed. See README for admin UI setup.",
+                "admin_ui": "Not compiled. Run `npm run build` in admin/.",
             }
 
     return app

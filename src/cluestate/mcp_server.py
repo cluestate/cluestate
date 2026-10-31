@@ -1,13 +1,13 @@
 """Model Context Protocol (MCP) server for ClueState.
 
-Enables Claude Desktop, Cursor, Zed, Windsurf, and autonomous AI agents
-to directly ingest, retrieve, and manage persistent entity memory.
+Enables MCP-compatible clients (Claude Desktop, Cursor, Zed, Windsurf, custom agents)
+to ingest, query, and manage verified customer and entity state locally or via remote API.
 """
 
-import asyncio
+from __future__ import annotations
+
 import os
-import sys
-from typing import Optional
+from datetime import datetime, timezone
 
 # Support both mcp 2.x (MCPServer) and mcp 1.x (FastMCP)
 try:
@@ -19,28 +19,35 @@ except ImportError:
         MCPServer = None
 
 
+def _auth_headers(api_key: str) -> dict[str, str]:
+    if api_key:
+        return {"Authorization": f"Bearer {api_key}"}
+    return {}
+
+
 def create_mcp_server() -> "MCPServer":
     if MCPServer is None:
         raise RuntimeError(
-            "The 'mcp' package is not installed. Install it with: pip install 'cluestate[mcp]' or pip install mcp"
+            "The 'mcp' package is not installed. Install it with: pip install mcp"
         )
 
     server = MCPServer(
         name="cluestate",
-        description="Audited Entity Intelligence & Memory Engine with confidence scoring and evidence trails.",
+        description="Customer Intelligence & Entity State Engine with verified source evidence.",
     )
 
     api_url = os.getenv("CLUESTATE_API_URL", "").rstrip("/")
     api_key = os.getenv("CLUESTATE_API_KEY", "")
+    workspace_id = int(os.getenv("CLUESTATE_WORKSPACE_ID", "1"))
 
     # ─────────────────────────────────────────────────────────────
-    # Tool: Ingest Memory
+    # Tool 1: Ingest Interaction
     # ─────────────────────────────────────────────────────────────
     @server.tool(
         name="cluestate_ingest",
         description=(
-            "Extract and save persistent factual claims about an entity (user, customer, project, organization) "
-            "from unstructured text, dialogue, or notes. Automatically resolves contradictions and links source evidence."
+            "Ingest an interaction, note, or transcript about an entity and extract structured claims "
+            "with verified source evidence and state resolution."
         ),
     )
     async def ingest_memory(
@@ -48,29 +55,15 @@ def create_mcp_server() -> "MCPServer":
         content: str,
         entity_name: str = "",
         source_type: str = "conversation",
-        source_description: str = "",
+        source_description: str = "MCP Agent Session",
     ) -> str:
-        """
-        Extract and save persistent knowledge about an entity.
-
-        :param external_id: Unique entity key (e.g. 'user_123', 'acme_corp', 'client_sarah')
-        :param content: Unstructured text containing facts or preferences
-        :param entity_name: Optional human-readable name of the entity
-        :param source_type: 'conversation', 'email', 'note', 'support_ticket', 'call_transcript'
-        :param source_description: Short context for this interaction
-        """
-        # Remote mode (via REST API)
         if api_url:
             import httpx
-
-            headers = {"Content-Type": "application/json"}
-            if api_key:
-                headers["Authorization"] = f"Bearer {api_key}"
 
             async with httpx.AsyncClient(base_url=api_url, timeout=60.0) as client:
                 res = await client.post(
                     "/api/ingest",
-                    headers=headers,
+                    headers=_auth_headers(api_key),
                     json={
                         "external_id": external_id,
                         "entity_name": entity_name or external_id,
@@ -81,184 +74,234 @@ def create_mcp_server() -> "MCPServer":
                     },
                 )
                 if not res.is_success:
-                    return f"Error ingesting memory: {res.text}"
+                    return f"Error ingesting interaction: {res.text}"
                 data = res.json()
-        else:
-            # Local in-process mode
-            from sqlalchemy import select
-            from .database import async_session_maker, init_db
-            from .engine import extract_memories_from_text, process_extracted_claims
-            from .models import Entity, EntityType, Episode, Memory, MemoryStatus, SourceType, Topic
+                memories = data.get("memories", [])
+                if not memories:
+                    return f"Recorded episode #{data.get('episode_id')} for '{external_id}', 0 claims extracted."
 
-            await init_db()
+                lines = [
+                    f"Extracted {len(memories)} claim(s) for '{entity_name or external_id}' "
+                    f"(new: {data.get('memories_new', 0)}, updated: {data.get('memories_updated', 0)}):"
+                ]
+                for m in memories:
+                    conf = int(m.get("confidence", 0.5) * 100)
+                    topic = m.get("topic_name") or "general"
+                    lines.append(f"• [{topic}] {m.get('claim')} ({conf}% confidence)")
+                return "\n".join(lines)
 
-            async with async_session_maker() as session:
-                # Find or create entity
-                res_ent = await session.execute(
-                    select(Entity).where(Entity.external_id == external_id)
+        from sqlalchemy import select
+        from .database import get_session_factory, init_db
+        from .engine import (
+            ExtractionError,
+            compute_content_hash,
+            extract_memories_from_text,
+            process_extracted_claims,
+        )
+        from .models import Entity, EntityType, Episode, Memory, MemoryStatus, SourceType, Topic
+
+        await init_db()
+
+        async with get_session_factory()() as session:
+            res = await session.execute(
+                select(Entity).where(
+                    Entity.workspace_id == workspace_id,
+                    Entity.external_id == external_id,
                 )
-                entity = res_ent.scalars().first()
-                if not entity:
-                    entity = Entity(
-                        external_id=external_id,
-                        name=entity_name or external_id,
-                        entity_type=EntityType.PERSON,
-                    )
-                    session.add(entity)
-                    await session.flush()
-
-                # Record Episode
-                try:
-                    st_enum = SourceType(source_type.lower())
-                except ValueError:
-                    st_enum = SourceType.CUSTOM
-
-                episode = Episode(
-                    entity_id=entity.id,
-                    source_type=st_enum,
-                    content=content,
-                    source_description=source_description,
+            )
+            entity = res.scalars().first()
+            if not entity:
+                entity = Entity(
+                    workspace_id=workspace_id,
+                    external_id=external_id,
+                    name=entity_name or external_id,
+                    entity_type=EntityType.PERSON,
                 )
-                session.add(episode)
+                session.add(entity)
                 await session.flush()
 
-                # Get existing memories & topics
-                res_mem = await session.execute(
-                    select(Memory).where(
-                        Memory.entity_id == entity.id,
-                        Memory.status.in_([MemoryStatus.ACTIVE, MemoryStatus.CONFIRMED]),
-                    )
-                )
-                existing_memories = list(res_mem.scalars().all())
+            try:
+                st = SourceType(source_type.lower())
+            except ValueError:
+                st = SourceType.CONVERSATION
 
-                res_topics = await session.execute(
-                    select(Topic).where(Topic.is_active == True)
-                )
-                topics = list(res_topics.scalars().all())
+            now = datetime.now(timezone.utc)
+            episode = Episode(
+                workspace_id=workspace_id,
+                entity_id=entity.id,
+                source_type=st,
+                content=content,
+                content_hash=compute_content_hash(content),
+                source_description=source_description,
+                occurred_at=now,
+                created_at=now,
+            )
+            session.add(episode)
+            await session.flush()
 
-                # Extract claims via LLM
+            res_mem = await session.execute(
+                select(Memory).where(
+                    Memory.entity_id == entity.id,
+                    Memory.status.in_([MemoryStatus.ACTIVE, MemoryStatus.CONFIRMED]),
+                )
+            )
+            existing_memories = list(res_mem.scalars().all())
+
+            res_topics = await session.execute(
+                select(Topic).where(
+                    Topic.workspace_id == workspace_id,
+                    Topic.is_active == True,
+                )
+            )
+            topics = list(res_topics.scalars().all())
+
+            try:
                 extraction = await extract_memories_from_text(
                     content=content,
                     entity_name=entity.name or entity.external_id,
                     existing_memories=existing_memories,
                     topics=topics,
                 )
+            except ExtractionError as exc:
+                await session.rollback()
+                return f"Error during LLM extraction: {exc}"
 
-                all_memories, new_count, updated_count = await process_extracted_claims(
-                    session=session,
-                    entity=entity,
-                    episode=episode,
-                    extraction=extraction,
-                    topics=topics,
-                )
-                await session.commit()
+            all_memories, new_count, updated_count = await process_extracted_claims(
+                session=session,
+                entity=entity,
+                episode=episode,
+                extraction=extraction,
+                topics=topics,
+            )
+            await session.commit()
 
-                data = {
-                    "memories_extracted": len(all_memories),
-                    "memories_new": new_count,
-                    "memories_updated": updated_count,
-                    "memories": [
-                        {
-                            "claim": m.claim,
-                            "confidence": m.confidence,
-                            "status": m.status.value if hasattr(m.status, "value") else str(m.status),
-                        }
-                        for m in all_memories
-                    ],
-                }
+            if not all_memories:
+                return f"Recorded episode #{episode.id} for '{entity.name}', 0 claims extracted."
 
-        lines = [
-            f"✅ Successfully extracted {data['memories_extracted']} facts for '{external_id}':",
-            f"• {data['memories_new']} new memories",
-            f"• {data['memories_updated']} updated / superseded memories",
-            "\nExtracted Claims:",
-        ]
-        for m in data.get("memories", []):
-            conf = int(m.get("confidence", 0) * 100)
-            lines.append(f" - {m.get('claim')} ({conf}% confidence, {m.get('status')})")
+            topic_map = {t.id: t.name for t in topics}
+            lines = [
+                f"Extracted {len(all_memories)} claim(s) for '{entity.name}' "
+                f"(new: {new_count}, updated: {updated_count}):"
+            ]
+            for m in all_memories:
+                t_name = topic_map.get(m.topic_id, "general") if m.topic_id else "general"
+                conf = int(m.confidence * 100)
+                lines.append(f"• [{t_name}] {m.claim} ({conf}% confidence)")
 
-        return "\n".join(lines)
+            return "\n".join(lines)
 
     # ─────────────────────────────────────────────────────────────
-    # Tool: Get Entity Intel
+    # Tool 2: Get Entity State / Intel
     # ─────────────────────────────────────────────────────────────
     @server.tool(
         name="cluestate_get_intel",
-        description=(
-            "Retrieve verified, structured markdown intelligence block about an entity "
-            "to prepend to an agent prompt or inform answers. Groups facts by topic with confidence scores."
-        ),
+        description="Retrieve structured markdown customer state block for an entity by external_id.",
     )
     async def get_entity_intel(external_id: str) -> str:
-        """
-        Get compiled knowledge about an entity.
-
-        :param external_id: The entity identifier to look up
-        """
         if api_url:
             import httpx
-
-            headers = {}
-            if api_key:
-                headers["Authorization"] = f"Bearer {api_key}"
 
             async with httpx.AsyncClient(base_url=api_url, timeout=30.0) as client:
                 res = await client.get(
                     f"/api/intel/by-external-id/{external_id}",
-                    headers=headers,
+                    headers=_auth_headers(api_key),
                 )
                 if res.status_code == 404:
-                    return f"No memories or profile found for entity '{external_id}'."
+                    return f"No profile found for entity '{external_id}'."
                 if not res.is_success:
-                    return f"Error retrieving intelligence: {res.text}"
-                return res.json().get("formatted_prompt", "No facts recorded.")
-        else:
-            from sqlalchemy import select
-            from .database import async_session_maker, init_db
-            from .engine import format_entity_intel
-            from .models import Entity
+                    return f"Error retrieving state: {res.text}"
+                return res.json().get("formatted_prompt", "No claims recorded.")
 
-            await init_db()
+        from sqlalchemy import select
+        from .database import get_session_factory, init_db
+        from .engine import format_entity_intel
+        from .models import Entity
 
-            async with async_session_maker() as session:
-                res = await session.execute(
-                    select(Entity).where(Entity.external_id == external_id)
+        await init_db()
+
+        async with get_session_factory()() as session:
+            res = await session.execute(
+                select(Entity).where(
+                    Entity.workspace_id == workspace_id,
+                    Entity.external_id == external_id,
                 )
-                entity = res.scalars().first()
-                if not entity:
-                    return f"No memories or profile found for entity '{external_id}'."
+            )
+            entity = res.scalars().first()
+            if not entity:
+                return f"No profile found for entity '{external_id}'."
 
-                intel_text = await format_entity_intel(session, entity)
-                return intel_text or f"Entity '{external_id}' is tracked, but has 0 active memories."
+            intel_text = await format_entity_intel(session, entity)
+            return intel_text or f"Entity '{external_id}' is tracked, but has 0 active claims."
 
     # ─────────────────────────────────────────────────────────────
-    # Tool: List Memories with Evidence
+    # Tool 3: List Memories with Evidence
     # ─────────────────────────────────────────────────────────────
     @server.tool(
         name="cluestate_list_memories",
-        description="List atomic claims for an entity with detailed confidence scores, topic tags, and source quotation evidence.",
+        description="List atomic claims for an entity with confidence scores, topics, and verified source quotes.",
     )
     async def list_memories(
         external_id: str,
         topic: str = "",
         status: str = "active",
     ) -> str:
-        """
-        List claims and source quotes for an entity.
+        if api_url:
+            import httpx
 
-        :param external_id: Entity ID
-        :param topic: Optional topic category filter (e.g. 'tech_stack', 'preferences', 'budget')
-        :param status: 'active', 'confirmed', 'rejected', 'superseded', or 'all'
-        """
+            async with httpx.AsyncClient(base_url=api_url, timeout=30.0) as client:
+                ent_res = await client.get(
+                    "/api/entities",
+                    params={"search": external_id, "limit": 20},
+                    headers=_auth_headers(api_key),
+                )
+                if not ent_res.is_success:
+                    return f"Error searching entity: {ent_res.text}"
+                entities = ent_res.json()
+                entity_obj = next((e for e in entities if e.get("external_id") == external_id), None)
+                if not entity_obj:
+                    return f"Entity '{external_id}' not found."
+
+                params = {}
+                if status and status != "all":
+                    params["status"] = status.lower()
+                mem_res = await client.get(
+                    f"/api/entities/{entity_obj['id']}/memories",
+                    params=params,
+                    headers=_auth_headers(api_key),
+                )
+                if not mem_res.is_success:
+                    return f"Error fetching memories: {mem_res.text}"
+                memories = mem_res.json()
+                if topic:
+                    memories = [
+                        m for m in memories
+                        if (m.get("topic_name") or "").lower() == topic.lower()
+                    ]
+                if not memories:
+                    return f"No claims found for '{external_id}'."
+
+                lines = [f"Found {len(memories)} claim(s) for '{entity_obj.get('name') or external_id}':\n"]
+                for m in memories:
+                    t_name = m.get("topic_name") or "General"
+                    conf = int(m.get("confidence", 0.5) * 100)
+                    lines.append(f"• [ID: {m['id']}] [{t_name}] {m['claim']} ({conf}% conf, {m['status']})")
+                    for ev in m.get("evidence", []):
+                        v_tag = "verified" if ev.get("is_verified") else "unverified"
+                        lines.append(f'    Quote ({v_tag}): "{ev.get("excerpt", "")}"')
+                return "\n".join(lines)
+
         from sqlalchemy import select
-        from .database import async_session_maker, init_db
+        from .database import get_session_factory, init_db
         from .models import Entity, Evidence, Memory, MemoryStatus, Topic
 
         await init_db()
 
-        async with async_session_maker() as session:
+        async with get_session_factory()() as session:
             res_ent = await session.execute(
-                select(Entity).where(Entity.external_id == external_id)
+                select(Entity).where(
+                    Entity.workspace_id == workspace_id,
+                    Entity.external_id == external_id,
+                )
             )
             entity = res_ent.scalars().first()
             if not entity:
@@ -276,9 +319,9 @@ def create_mcp_server() -> "MCPServer":
             memories = res_mem.scalars().all()
 
             if not memories:
-                return f"No memories found matching status '{status}' for '{external_id}'."
+                return f"No claims found matching status '{status}' for '{external_id}'."
 
-            lines = [f"Found {len(memories)} memories for '{entity.name or external_id}':\n"]
+            lines = [f"Found {len(memories)} claim(s) for '{entity.name or external_id}':\n"]
             for m in memories:
                 topic_name = "General"
                 if m.topic_id:
@@ -293,38 +336,58 @@ def create_mcp_server() -> "MCPServer":
                 status_val = m.status.value if hasattr(m.status, "value") else str(m.status)
                 lines.append(f"• [ID: {m.id}] [{topic_name}] {m.claim} ({conf}% conf, {status_val})")
 
-                # Fetch evidence quotes
                 ev_res = await session.execute(
                     select(Evidence).where(Evidence.memory_id == m.id)
                 )
-                evidence_list = ev_res.scalars().all()
-                for ev in evidence_list:
-                    lines.append(f'    Quote: "{ev.excerpt}"')
+                for ev in ev_res.scalars().all():
+                    v_tag = "verified" if ev.is_verified else "unverified"
+                    lines.append(f'    Quote ({v_tag}): "{ev.excerpt}"')
 
             return "\n".join(lines)
 
     # ─────────────────────────────────────────────────────────────
-    # Tool: Search Entities
+    # Tool 4: Search Entities
     # ─────────────────────────────────────────────────────────────
     @server.tool(
         name="cluestate_search_entities",
-        description="Search tracked entities by name or external ID to discover existing profiles.",
+        description="Search tracked entities by name or external ID.",
     )
     async def search_entities(query: str = "", limit: int = 10) -> str:
-        """
-        Search for entities.
+        if api_url:
+            import httpx
 
-        :param query: Name or external ID search substring
-        :param limit: Maximum number of results
-        """
+            async with httpx.AsyncClient(base_url=api_url, timeout=30.0) as client:
+                res = await client.get(
+                    "/api/entities",
+                    params={"search": query, "limit": limit},
+                    headers=_auth_headers(api_key),
+                )
+                if not res.is_success:
+                    return f"Error searching entities: {res.text}"
+                entities = res.json()
+                if not entities:
+                    return f"No entities found matching '{query}'."
+                lines = [f"Found {len(entities)} entities:"]
+                for e in entities:
+                    lines.append(
+                        f"• {e.get('name')} (External ID: `{e.get('external_id')}`) | "
+                        f"Type: {e.get('entity_type')} | Active Claims: {e.get('memory_count', 0)}"
+                    )
+                return "\n".join(lines)
+
         from sqlalchemy import func, select
-        from .database import async_session_maker, init_db
+        from .database import get_session_factory, init_db
         from .models import Entity, Memory, MemoryStatus
 
         await init_db()
 
-        async with async_session_maker() as session:
-            stmt = select(Entity).limit(limit).order_by(Entity.created_at.desc())
+        async with get_session_factory()() as session:
+            stmt = (
+                select(Entity)
+                .where(Entity.workspace_id == workspace_id)
+                .limit(limit)
+                .order_by(Entity.created_at.desc())
+            )
             if query:
                 stmt = stmt.where(
                     Entity.name.ilike(f"%{query}%") | Entity.external_id.ilike(f"%{query}%")
@@ -345,45 +408,59 @@ def create_mcp_server() -> "MCPServer":
                 )
                 count = cnt_res.scalar() or 0
                 lines.append(
-                    f"• {e.name} (External ID: `{e.external_id}`) | Type: {e.entity_type} | Facts: {count}"
+                    f"• {e.name} (External ID: `{e.external_id}`) | Type: {e.entity_type.value} | Active Claims: {count}"
                 )
 
             return "\n".join(lines)
 
     # ─────────────────────────────────────────────────────────────
-    # Tool: Delete / Forget Memory
+    # Tool 5: Delete / Forget Memory
     # ─────────────────────────────────────────────────────────────
     @server.tool(
         name="cluestate_forget",
-        description="Permanently delete an obsolete, erroneous, or requested-to-forget memory claim by ID.",
+        description="Permanently delete a memory claim and its linked evidence by ID.",
     )
     async def forget_memory(memory_id: int) -> str:
-        """
-        Delete a memory by its ID.
+        if api_url:
+            import httpx
 
-        :param memory_id: The integer ID of the memory to remove
-        """
-        from .database import async_session_maker, init_db
-        from .models import Memory
+            async with httpx.AsyncClient(base_url=api_url, timeout=30.0) as client:
+                res = await client.delete(
+                    f"/api/memories/{memory_id}",
+                    headers=_auth_headers(api_key),
+                )
+                if res.status_code == 404:
+                    return f"Memory #{memory_id} not found."
+                if not res.is_success:
+                    return f"Error deleting memory: {res.text}"
+                return f"Memory #{memory_id} deleted."
+
+        from sqlalchemy import delete, update
+        from .database import get_session_factory, init_db
+        from .models import Evidence, Memory
 
         await init_db()
 
-        async with async_session_maker() as session:
+        async with get_session_factory()() as session:
             mem = await session.get(Memory, memory_id)
-            if not mem:
+            if not mem or mem.workspace_id != workspace_id:
                 return f"Memory with ID {memory_id} not found."
 
             claim_text = mem.claim
+            await session.execute(
+                update(Memory).where(Memory.superseded_by_id == memory_id).values(superseded_by_id=None)
+            )
+            await session.execute(delete(Evidence).where(Evidence.memory_id == memory_id))
             await session.delete(mem)
             await session.commit()
-            return f"✅ Memory #{memory_id} ('{claim_text}') was deleted successfully."
+            return f"Memory #{memory_id} ('{claim_text}') was deleted."
 
     # ─────────────────────────────────────────────────────────────
-    # Resource: Entity Intel Prompt
+    # Resource: Entity State Template
     # ─────────────────────────────────────────────────────────────
     @server.resource("cluestate://entities/{external_id}")
     async def get_entity_resource(external_id: str) -> str:
-        """Resource template providing entity intelligence context."""
+        """Resource template providing structured entity state."""
         return await get_entity_intel(external_id)
 
     return server

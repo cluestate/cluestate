@@ -8,26 +8,34 @@ import {
   Code2,
   PlusCircle,
   Activity,
+  LogOut,
+  Building2,
 } from 'lucide-react';
-import type { HealthInfo } from '../types';
+import type { HealthInfo, User, Workspace } from '../types';
 
 interface SidebarProps {
   currentTab: string;
   onSelectTab: (tab: string) => void;
   health: HealthInfo | null;
+  user: User | null;
+  workspace: Workspace | null;
   onOpenIngest: () => void;
+  onLogout: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
   currentTab,
   onSelectTab,
   health,
+  user,
+  workspace,
   onOpenIngest,
+  onLogout,
 }) => {
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'entities', label: 'Entities', icon: Users },
-    { id: 'topics', label: 'Memory Topics', icon: Tags },
+    { id: 'topics', label: 'State Schemas', icon: Tags },
     { id: 'playground', label: 'Extraction Lab', icon: Sparkles },
     { id: 'settings', label: 'API & Settings', icon: Code2 },
   ];
@@ -51,8 +59,61 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </div>
 
+      {/* Workspace Badge */}
+      {workspace && (
+        <div
+          style={{
+            margin: '12px 16px 0',
+            padding: '10px 12px',
+            background: 'var(--bg-primary)',
+            borderRadius: 'var(--radius-sm)',
+            border: '1px solid var(--border-subtle)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+          }}
+        >
+          <Building2 size={14} color="var(--accent-primary)" style={{ flexShrink: 0 }} />
+          <div style={{ flex: 1, overflow: 'hidden' }}>
+            <div
+              style={{
+                fontSize: '12px',
+                fontWeight: 600,
+                color: 'var(--text-primary)',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              {workspace.name}
+            </div>
+            {user && (
+              <div
+                style={{
+                  fontSize: '11px',
+                  color: 'var(--text-muted)',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                {user.email}
+              </div>
+            )}
+          </div>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={onLogout}
+            title="Sign out"
+            style={{ padding: '4px', color: 'var(--text-muted)' }}
+          >
+            <LogOut size={14} />
+          </button>
+        </div>
+      )}
+
       {/* Quick Action Button */}
-      <div style={{ padding: '16px 16px 4px' }}>
+      <div style={{ padding: '14px 16px 4px' }}>
         <button
           className="btn btn-primary w-full"
           style={{ justifyContent: 'center', height: '40px' }}
@@ -101,7 +162,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 whiteSpace: 'nowrap',
               }}
             >
-              {health ? `${health.database.toUpperCase()} &bull; ${health.llm_model}` : 'Connecting...'}
+              {health ? `${health.database.toUpperCase()} • ${health.llm_model}` : 'Connecting...'}
             </div>
           </div>
           <Activity size={15} color="var(--text-muted)" />

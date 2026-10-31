@@ -1,0 +1,45 @@
+{
+  "name": "@cluestate/sdk",
+  "version": "0.1.0",
+  "description": "Official TypeScript & JavaScript SDK for ClueState Customer Intelligence Infrastructure",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "keywords": [
+    "cluestate",
+    "customer-intelligence",
+    "entity-state",
+    "memory",
+    "ai",
+    "sdk"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cluestate/cluestate.git",
+    "directory": "sdks/typescript"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  }
+}
+

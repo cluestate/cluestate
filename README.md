@@ -128,6 +128,64 @@ Returns both the structured `memories` array (for application logic, CRMs, and p
 
 ---
 
+## Official SDKs (Python & TypeScript)
+
+ClueState includes official typed SDKs for **Python** (sync & async) and **TypeScript / JavaScript** (zero-dependency, universal `fetch`).
+
+### Python SDK ([Docs](docs/python-sdk.md) · [`sdks/python`](sdks/python))
+
+```python
+from cluestate import ClueState
+
+client = ClueState(
+    api_key="cs_live_YOUR_API_KEY",
+    base_url="https://app.cluestate.com",
+)
+
+# 1. Ingest a customer interaction
+client.ingest(
+    external_id="cust_402",
+    entity_name="Marcus Vance",
+    content="We migrated our primary database to PostgreSQL and set our Q4 budget to $25,000.",
+    source_type="support_ticket",
+    idempotency_key="evt_ticket_8841",
+)
+
+# 2. Retrieve verified customer state
+intel = client.get_intel(external_id="cust_402")
+print(intel.formatted_prompt)
+```
+
+Also supports `AsyncClueState` for `asyncio` and FastAPI services. See the [Python SDK Reference](docs/python-sdk.md) and [`examples/python_quickstart.py`](examples/python_quickstart.py).
+
+### TypeScript / JavaScript SDK ([Docs](docs/typescript-sdk.md) · [`sdks/typescript`](sdks/typescript))
+
+```typescript
+import { ClueState } from "@cluestate/sdk";
+
+const cluestate = new ClueState({
+  apiKey: process.env.CLUESTATE_API_KEY!,
+  baseUrl: "https://app.cluestate.com",
+});
+
+// 1. Ingest an interaction
+await cluestate.ingest({
+  externalId: "cust_402",
+  entityName: "Marcus Vance",
+  content: "We migrated our primary database to PostgreSQL and set our Q4 budget to $25,000.",
+  sourceType: "support_ticket",
+  idempotencyKey: "evt_ticket_8841",
+});
+
+// 2. Retrieve verified customer state
+const intel = await cluestate.getIntel({ externalId: "cust_402" });
+console.log(intel.formatted_prompt);
+```
+
+See the [TypeScript SDK Reference](docs/typescript-sdk.md) and [`examples/typescript_quickstart.ts`](examples/typescript_quickstart.ts).
+
+---
+
 ## Installation & Self-Hosting
 
 ### Option 1: Docker Compose (PostgreSQL + API + Platform UI)
@@ -226,6 +284,17 @@ ClueState uses [LiteLLM](https://docs.litellm.ai/) and supports OpenAI, Anthropi
 | `DATABASE_URL` | `sqlite+aiosqlite:///./cluestate.db` | Async SQLAlchemy database URL |
 | `SECRET_KEY` | *(auto-generated)* | Secret key for signing JWT session tokens |
 | `CORS_ORIGINS` | `https://app.cluestate.com,...` | Comma-separated allowed CORS origins |
+
+---
+
+## Documentation & Community
+
+- **[System Architecture & State Resolution Engine](docs/architecture.md)** — Deep dive into topic schemas, cardinality, evidence verification, and workspace isolation.
+- **[Python SDK Documentation](docs/python-sdk.md)** — Sync (`ClueState`) and async (`AsyncClueState`) client reference.
+- **[TypeScript / JS SDK Documentation](docs/typescript-sdk.md)** — `@cluestate/sdk` client reference for Node.js, Bun, Deno, and Edge runtimes.
+- **[Contributing Guide](CONTRIBUTING.md)** — Development setup, testing, and pull request workflow.
+- **[Security Policy](SECURITY.md)** — Vulnerability reporting and security architecture.
+- **[Changelog](CHANGELOG.md)** — Release history.
 
 ---
 

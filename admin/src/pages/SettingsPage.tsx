@@ -83,57 +83,57 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     setTimeout(() => setCopiedNewKey(false), 2000);
   };
 
-  const baseUrl =
+  const serverUrl =
     typeof window !== 'undefined' && window.location.origin
-      ? `${window.location.origin}/api`
-      : 'https://app.cluestate.com/api';
+      ? window.location.origin
+      : 'https://app.cluestate.com';
+  const baseUrl = `${serverUrl}/api`;
 
   const codeSnippets = {
-    python: `# Ingest customer interactions into ClueState
-import httpx
+    python: `# ClueState Python SDK (Sync & Async)
+from cluestate import ClueState
 
-api_url = "${baseUrl}"
-headers = {"Authorization": "Bearer cs_live_YOUR_API_KEY"}
+cs = ClueState(
+    api_key="cs_live_YOUR_API_KEY",
+    base_url="${serverUrl}",
+)
 
 # 1. Ingest an interaction & extract verified claims
-res = httpx.post(f"{api_url}/ingest", headers=headers, json={
-    "external_id": "cust_123",
-    "entity_name": "Alice Chen",
-    "content": "Alice prefers Dark Mode and confirmed an annual budget of $50,000.",
-    "source_type": "conversation",
-    "idempotency_key": "evt_2026_10_31_001"
-})
-print("Extracted claims:", res.json()["memories"])
+res = cs.ingest(
+    external_id="cust_123",
+    entity_name="Alice Chen",
+    content="Alice prefers Dark Mode and confirmed an annual budget of $50,000.",
+    source_type="conversation",
+    idempotency_key="evt_2026_10_31_001",
+)
+for m in res.memories:
+    print(f"[{m.topic_name}] {m.claim} (value={m.structured_value})")
 
 # 2. Retrieve structured customer state
-intel = httpx.get(f"{api_url}/intel/by-external-id/cust_123", headers=headers).json()
-print(intel["formatted_prompt"])`,
+intel = cs.get_intel("cust_123")
+print(intel.formatted_prompt)`,
 
-    ts: `// Node.js / TypeScript Integration
-const API_URL = '${baseUrl}';
-const HEADERS = {
-  'Content-Type': 'application/json',
-  'Authorization': 'Bearer cs_live_YOUR_API_KEY',
-};
+    ts: `// ClueState TypeScript / JavaScript SDK (@cluestate/sdk)
+import { ClueState } from '@cluestate/sdk';
+
+const cs = new ClueState({
+  apiKey: 'cs_live_YOUR_API_KEY',
+  baseUrl: '${serverUrl}',
+});
 
 // 1. Ingest interaction
-const ingestRes = await fetch(\`\${API_URL}/ingest\`, {
-  method: 'POST',
-  headers: HEADERS,
-  body: JSON.stringify({
-    external_id: 'user_456',
-    entity_name: 'Bob Miller',
-    content: 'Customer runs PostgreSQL on AWS and requested weekly email reports.',
-    source_type: 'support_ticket',
-  }),
+const res = await cs.ingest({
+  externalId: 'user_456',
+  entityName: 'Bob Miller',
+  content: 'Customer runs PostgreSQL on AWS and requested weekly email reports.',
+  sourceType: 'support_ticket',
+  idempotencyKey: 'evt_ticket_456',
 });
-const { memories } = await ingestRes.json();
+console.log('Extracted claims:', res.memories);
 
 // 2. Fetch structured customer state
-const intelRes = await fetch(\`\${API_URL}/intel/by-external-id/user_456\`, {
-  headers: HEADERS,
-});
-const { formatted_prompt } = await intelRes.json();`,
+const intel = await cs.getIntel('user_456');
+console.log(intel.formatted_prompt);`,
 
     php: `<?php
 // PHP cURL Integration

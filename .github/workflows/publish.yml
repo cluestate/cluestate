@@ -1,0 +1,122 @@
+name: Publish Packages
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Package to publish ('all', 'cluestate-pypi', 'cluestate-sdk-pypi', 'npm-sdk')"
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - all
+          - cluestate-pypi
+          - cluestate-sdk-pypi
+          - npm-sdk
+
+jobs:
+  publish-cluestate-pypi:
+    name: Publish cluestate to PyPI
+    if: github.event_name == 'release' || github.event.inputs.target == 'all' || github.event.inputs.target == 'cluestate-pypi'
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/cluestate
+    permissions:
+      id-token: write  # Required for PyPI Trusted Publishing (OIDC)
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20 & build admin UI static assets
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: |
+          cd admin
+          npm ci
+          npm run build
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: pip install --upgrade build twine
+
+      - name: Build wheel and source dist
+        run: python -m build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+          # If using static token instead of OIDC Trusted Publishing, secrets.PYPI_API_TOKEN can be used:
+          # password: ${{ secrets.PYPI_API_TOKEN }}
+
+  publish-cluestate-sdk-pypi:
+    name: Publish cluestate-sdk to PyPI
+    if: github.event_name == 'release' || github.event.inputs.target == 'all' || github.event.inputs.target == 'cluestate-sdk-pypi'
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi-sdk
+      url: https://pypi.org/p/cluestate-sdk
+    permissions:
+      id-token: write  # Required for PyPI Trusted Publishing (OIDC)
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: pip install --upgrade build
+
+      - name: Build lightweight SDK package
+        run: |
+          cd sdks/python
+          python -m build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: sdks/python/dist/
+
+  publish-npm-sdk:
+    name: Publish @cluestate/sdk to npm
+    if: github.event_name == 'release' || github.event.inputs.target == 'all' || github.event.inputs.target == 'npm-sdk'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20 with npm registry
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies & build
+        working-directory: ./sdks/typescript
+        run: |
+          npm install
+          npm run build
+
+      - name: Publish to npm
+        working-directory: ./sdks/typescript
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

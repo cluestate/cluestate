@@ -70,13 +70,13 @@ client.ingest(
 ```typescript
 // TypeScript SDK
 await cluestate.ingest({
-  externalId: "cust_402",
-  entityName: "Marcus Vance",
-  sourceType: "support_ticket",
-  sourceRecordId: "ticket_8841",
-  idempotencyKey: "evt_ticket_8841",
-  occurredAt: "2026-10-31T14:20:00Z",
-  content: "We migrated our primary database from MySQL to PostgreSQL last month. Our approved software budget for Q4 is $25,000, and we prefer technical updates via Slack.",
+    externalId: "cust_402",
+    entityName: "Marcus Vance",
+    sourceType: "support_ticket",
+    sourceRecordId: "ticket_8841",
+    idempotencyKey: "evt_ticket_8841",
+    occurredAt: "2026-10-31T14:20:00Z",
+    content: "We migrated our primary database from MySQL to PostgreSQL last month. Our approved software budget for Q4 is $25,000, and we prefer technical updates via Slack.",
 });
 ```
 
@@ -230,17 +230,17 @@ npm install @cluestate/sdk
 import { ClueState } from "@cluestate/sdk";
 
 const cluestate = new ClueState({
-  apiKey: process.env.CLUESTATE_API_KEY!,
-  baseUrl: "https://app.cluestate.com", // or http://localhost:8000
+    apiKey: process.env.CLUESTATE_API_KEY!,
+    baseUrl: "https://app.cluestate.com", // or http://localhost:8000
 });
 
 // 1. Ingest an interaction
 await cluestate.ingest({
-  externalId: "cust_402",
-  entityName: "Marcus Vance",
-  content: "We migrated our primary database to PostgreSQL and set our Q4 budget to $25,000.",
-  sourceType: "support_ticket",
-  idempotencyKey: "evt_ticket_8841",
+    externalId: "cust_402",
+    entityName: "Marcus Vance",
+    content: "We migrated our primary database to PostgreSQL and set our Q4 budget to $25,000.",
+    sourceType: "support_ticket",
+    idempotencyKey: "evt_ticket_8841",
 });
 
 // 2. Retrieve verified customer state

@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend-tests:
+    name: Backend & Python SDK (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[postgres,dev]"
+          pip install -e ./sdks/python
+
+      - name: Run pytest suite
+        run: pytest -v
+
+  frontend-and-ts-sdk:
+    name: Platform UI & TypeScript SDK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build Platform UI (admin)
+        working-directory: ./admin
+        run: |
+          npm ci
+          npm run build
+
+      - name: Typecheck & Build TypeScript SDK (@cluestate/sdk)
+        working-directory: ./sdks/typescript
+        run: |
+          npm install
+          npm run build
+

@@ -7,7 +7,8 @@ Understand every customer beyond the data. Turn fragmented customer interactions
 Give your customer service teams, personalization engines, and AI agents the structured context they need.
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.11+-green.svg)](https://python.org)
+[![Python SDK](https://img.shields.io/badge/python%20sdk-available-green.svg)](docs/python-sdk.md)
+[![TypeScript SDK](https://img.shields.io/badge/typescript%20sdk-zero--dependency-3178C6.svg)](docs/typescript-sdk.md)
 [![Docker](https://img.shields.io/badge/docker-ready-2496ED.svg)](docker-compose.yml)
 
 ---
@@ -19,6 +20,7 @@ Organizations define what they want to know about their customers using typed **
 - **Structured Customer State:** Define typed schemas (`text`, `number`, `boolean`, `enum`, `list`) with explicit cardinality (`single` vs. `multiple`) and update policies (`replace`, `append`, `review`).
 - **Evidence & Provenance:** Every claim links to its source episode with programmatically verified character offsets (`char_start`, `char_end`), source record IDs, interaction timestamps (`occurred_at`), and SHA-256 content hashes.
 - **Explicit State Transitions:** Rather than blindly overwriting by category, ClueState distinguishes between coexisting attributes (`add`), supporting evidence (`support`), and superseding outdated facts (`supersede`).
+- **Official Typed SDKs:** Ergonomic, type-safe clients for **Python** (`ClueState` & `AsyncClueState`) and **TypeScript / JavaScript** (`@cluestate/sdk`, zero dependencies, universal `fetch`).
 - **Multi-Tenant Platform & UI:** Includes workspace isolation, user authentication, scoped API keys (`cs_live_...`), and a built-in dark-mode management UI (`app.cluestate.com` or self-hosted).
 
 ---
@@ -47,7 +49,39 @@ When a customer with existing preferences for *Nike* and *Adidas* running shoes 
 
 ### 2. Ingest an Interaction
 
+Send an interaction via SDK or REST API:
+
+```python
+# Python SDK
+client.ingest(
+    external_id="cust_402",
+    entity_name="Marcus Vance",
+    source_type="support_ticket",
+    source_record_id="ticket_8841",
+    idempotency_key="evt_ticket_8841",
+    occurred_at="2026-10-31T14:20:00Z",
+    content="We migrated our primary database from MySQL to PostgreSQL last month. Our approved software budget for Q4 is $25,000, and we prefer technical updates via Slack.",
+)
+```
+
+<details>
+<summary>Or via TypeScript SDK / cURL</summary>
+
+```typescript
+// TypeScript SDK
+await cluestate.ingest({
+  externalId: "cust_402",
+  entityName: "Marcus Vance",
+  sourceType: "support_ticket",
+  sourceRecordId: "ticket_8841",
+  idempotencyKey: "evt_ticket_8841",
+  occurredAt: "2026-10-31T14:20:00Z",
+  content: "We migrated our primary database from MySQL to PostgreSQL last month. Our approved software budget for Q4 is $25,000, and we prefer technical updates via Slack.",
+});
+```
+
 ```bash
+# cURL
 curl -X POST http://localhost:8000/api/ingest \
   -H "Authorization: Bearer cs_live_YOUR_API_KEY" \
   -H "Content-Type: application/json" \
@@ -61,6 +95,7 @@ curl -X POST http://localhost:8000/api/ingest \
     "content": "We migrated our primary database from MySQL to PostgreSQL last month. Our approved software budget for Q4 is $25,000, and we prefer technical updates via Slack."
   }'
 ```
+</details>
 
 ### 3. Extracted & Verified Output
 
@@ -119,10 +154,27 @@ ClueState validates extracted values against your topic schemas and verifies tha
 
 ### 4. Query Customer State
 
+```python
+# Python SDK
+intel = client.get_intel(external_id="cust_402")
+print(intel.formatted_prompt)
+```
+
+<details>
+<summary>Or via TypeScript SDK / cURL</summary>
+
+```typescript
+// TypeScript SDK
+const intel = await cluestate.getIntel({ externalId: "cust_402" });
+console.log(intel.formatted_prompt);
+```
+
 ```bash
+# cURL
 curl http://localhost:8000/api/intel/by-external-id/cust_402 \
   -H "Authorization: Bearer cs_live_YOUR_API_KEY"
 ```
+</details>
 
 Returns both the structured `memories` array (for application logic, CRMs, and personalization) and a pre-formatted `formatted_prompt` block (for LLM context injection).
 
@@ -130,20 +182,27 @@ Returns both the structured `memories` array (for application logic, CRMs, and p
 
 ## Official SDKs (Python & TypeScript)
 
-ClueState includes official typed SDKs for **Python** (sync & async) and **TypeScript / JavaScript** (zero-dependency, universal `fetch`).
+ClueState provides official typed SDKs for integrating continuous customer intelligence into your backend services, AI agent loops, and web applications.
 
-### Python SDK ([Docs](docs/python-sdk.md) · [`sdks/python`](sdks/python))
+### Python SDK ([Documentation](docs/python-sdk.md) · [Package](sdks/python))
+
+Install the lightweight client (no server or database dependencies):
+
+```bash
+pip install cluestate-sdk
+# or install full engine: pip install cluestate
+```
 
 ```python
 from cluestate import ClueState
 
 client = ClueState(
     api_key="cs_live_YOUR_API_KEY",
-    base_url="https://app.cluestate.com",
+    base_url="https://app.cluestate.com",  # or http://localhost:8000
 )
 
 # 1. Ingest a customer interaction
-client.ingest(
+response = client.ingest(
     external_id="cust_402",
     entity_name="Marcus Vance",
     content="We migrated our primary database to PostgreSQL and set our Q4 budget to $25,000.",
@@ -156,16 +215,23 @@ intel = client.get_intel(external_id="cust_402")
 print(intel.formatted_prompt)
 ```
 
-Also supports `AsyncClueState` for `asyncio` and FastAPI services. See the [Python SDK Reference](docs/python-sdk.md) and [`examples/python_quickstart.py`](examples/python_quickstart.py).
+Also includes [`AsyncClueState`](docs/python-sdk.md#asynchronous-usage-asynccluestate) for `asyncio` services. See the [Python SDK Reference](docs/python-sdk.md) and [`examples/python_quickstart.py`](examples/python_quickstart.py).
 
-### TypeScript / JavaScript SDK ([Docs](docs/typescript-sdk.md) · [`sdks/typescript`](sdks/typescript))
+### TypeScript / JavaScript SDK ([Documentation](docs/typescript-sdk.md) · [Package](sdks/typescript))
+
+Zero runtime dependencies. Runs natively in Node.js 18+, Bun, Deno, Cloudflare Workers, and Vercel Edge:
+
+```bash
+npm install @cluestate/sdk
+# or: pnpm add @cluestate/sdk / bun add @cluestate/sdk
+```
 
 ```typescript
 import { ClueState } from "@cluestate/sdk";
 
 const cluestate = new ClueState({
   apiKey: process.env.CLUESTATE_API_KEY!,
-  baseUrl: "https://app.cluestate.com",
+  baseUrl: "https://app.cluestate.com", // or http://localhost:8000
 });
 
 // 1. Ingest an interaction
@@ -186,9 +252,14 @@ See the [TypeScript SDK Reference](docs/typescript-sdk.md) and [`examples/typesc
 
 ---
 
-## Installation & Self-Hosting
+## Installation & Deployment
 
-### Option 1: Docker Compose (PostgreSQL + API + Platform UI)
+### Quickest Start: Use the SDK with ClueState Cloud
+If you use [app.cluestate.com](https://app.cluestate.com), simply install the SDK (`pip install cluestate-sdk` or `npm install @cluestate/sdk`), get your API key from the web console, and start ingesting interactions.
+
+### Self-Hosting the ClueState Platform
+
+#### Option 1: Docker Compose (PostgreSQL + API + Platform UI)
 
 ```bash
 git clone https://github.com/cluestate/cluestate.git

@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.cluestate/cluestate",
   "title": "ClueState Customer Intelligence MCP",
-  "description": "Continuous, evidence-grounded customer state extraction and memory retrieval for AI agents.",
+  "description": "ClueState — Evidence-backed customer and entity intelligence infrastructure.",
   "version": "0.1.0",
   "repository": {
     "url": "https://github.com/cluestate/cluestate",
@@ -23,3 +23,4 @@
     }
   ]
 }
+

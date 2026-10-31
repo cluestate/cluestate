@@ -12,10 +12,10 @@ from pydantic import BaseModel, Field
 DEFAULT_BASE_URL = "https://app.cluestate.com"
 
 EntityTypeLiteral = Literal["person", "organization", "product", "location", "custom"]
-MemoryStatusLiteral = Literal["active", "confirmed", "rejected", "superseded"]
+MemoryStatusLiteral = Literal["active", "confirmed", "pending_review", "rejected", "superseded"]
 ClaimTypeLiteral = Literal["explicit", "inferred", "observed"]
 TopicCardinalityLiteral = Literal["single", "multiple"]
-UpdatePolicyLiteral = Literal["replace", "append", "merge", "review"]
+UpdatePolicyLiteral = Literal["replace", "append", "review"]
 SourceTypeLiteral = Literal[
     "conversation",
     "email",

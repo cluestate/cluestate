@@ -1,12 +1,12 @@
 export type EntityType = 'person' | 'organization' | 'product' | 'location' | 'custom';
 
-export type MemoryStatus = 'active' | 'confirmed' | 'rejected' | 'superseded';
+export type MemoryStatus = 'active' | 'confirmed' | 'pending_review' | 'rejected' | 'superseded';
 
 export type ClaimType = 'explicit' | 'inferred' | 'observed';
 
 export type TopicCardinality = 'single' | 'multiple';
 
-export type UpdatePolicy = 'replace' | 'append' | 'merge' | 'review';
+export type UpdatePolicy = 'replace' | 'append' | 'review';
 
 export type SourceType =
   | 'conversation'

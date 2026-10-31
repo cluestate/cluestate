@@ -40,10 +40,7 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title="ClueState",
-        description=(
-            "Customer Intelligence Infrastructure — extract, verify, and maintain "
-            "evidence-backed customer state across interactions."
-        ),
+        description="ClueState — Evidence-backed customer and entity intelligence infrastructure.",
         version=__version__,
         lifespan=lifespan,
         docs_url="/docs",

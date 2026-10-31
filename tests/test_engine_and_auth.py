@@ -16,10 +16,8 @@ from cluestate.engine import (
 from cluestate.main import create_app
 from cluestate.models import (
     ClaimOperation,
-    ClaimType,
     Entity,
     Episode,
-    Evidence,
     Memory,
     MemoryStatus,
     Topic,

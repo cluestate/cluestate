@@ -8,7 +8,6 @@ from sqlalchemy import Column, Text, UniqueConstraint
 from sqlalchemy.types import JSON
 from sqlmodel import Field, Relationship, SQLModel
 
-
 # ──────────────────────────────────────────────
 # Enums
 # ──────────────────────────────────────────────
@@ -24,6 +23,7 @@ class EntityType(str, Enum):
 class MemoryStatus(str, Enum):
     ACTIVE = "active"
     CONFIRMED = "confirmed"
+    PENDING_REVIEW = "pending_review"
     REJECTED = "rejected"
     SUPERSEDED = "superseded"
 
@@ -42,7 +42,6 @@ class TopicCardinality(str, Enum):
 class UpdatePolicy(str, Enum):
     REPLACE = "replace"
     APPEND = "append"
-    MERGE = "merge"
     REVIEW = "review"
 
 

@@ -39,6 +39,8 @@ export const MemoryCard: React.FC<MemoryCardProps> = ({
         return <span className="badge badge-success">Confirmed</span>;
       case 'active':
         return <span className="badge badge-info">Active</span>;
+      case 'pending_review':
+        return <span className="badge badge-warning">Pending Review</span>;
       case 'rejected':
         return <span className="badge badge-danger">Rejected</span>;
       case 'superseded':

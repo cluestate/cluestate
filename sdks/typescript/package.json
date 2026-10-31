@@ -1,7 +1,7 @@
 {
   "name": "@cluestate/sdk",
   "version": "0.1.0",
-  "description": "Official TypeScript & JavaScript SDK for ClueState Customer Intelligence Infrastructure",
+  "description": "ClueState TypeScript SDK — Evidence-backed customer and entity intelligence infrastructure.",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/index.js",

@@ -1,216 +1,492 @@
-"""Tests for the ClueState Python SDK, State Resolution Engine, and Evidence Verifier."""
+"""Regression tests for State Resolution, Schema Contracts, Temporal Ordering, RBAC, Multi-Tenancy, and Python SDK."""
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import httpx
 import pytest
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from cluestate import AsyncClueState, ClueStateError
-from cluestate.app import app
-from cluestate.auth import create_access_token
-from cluestate.database import get_db
+from cluestate.database import get_session
 from cluestate.engine import (
     ExtractedClaim,
-    ExtractionOutput,
-    coerce_and_validate_value,
+    ExtractionResult,
+    format_entity_intel,
     process_extracted_claims,
-    verify_evidence_excerpt,
+    validate_and_coerce_value,
 )
+from cluestate.main import create_app
 from cluestate.models import (
-     Base,
     ClaimOperation,
     ClaimType,
     Entity,
+    EntityType,
     Episode,
+    Evidence,
+    Memory,
     MemoryStatus,
     Topic,
     TopicCardinality,
-    TopicDataType,
     UpdatePolicy,
-    Workspace,
 )
+from cluestate.security import create_access_token
 
 
-@pytest.fixture
-async def db_session():
-    """Create an isolated in-memory SQLite database session for each test."""
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
-    session_factory = async_sessionmaker(engine, expire_on_commit=False)
-    async with session_factory() as session:
-        workspace = Workspace(id=1, name="Test Workspace", slug="test-workspace")
-        session.add(workspace)
-        await session.commit()
-        yield session
-
-    await engine.dispose()
-
-
-def test_verify_evidence_excerpt_exact_and_case_insensitive():
-    source = "We migrated our primary database from MySQL to PostgreSQL last month."
-    ok, start, end = verify_evidence_excerpt(
-        source, "migrated our primary database from MySQL to PostgreSQL"
-    )
-    assert ok is True
-    assert start is not None and end is not None
-    assert source[start:end] == "migrated our primary database from MySQL to PostgreSQL"
-
-    ok_missing, s_missing, e_missing = verify_evidence_excerpt(
-        source, "We use Oracle Cloud Infrastructure"
-    )
-    assert ok_missing is False
-    assert s_missing is None and e_missing is None
-
-
-def test_coerce_and_validate_value():
+def test_locale_aware_number_validation():
+    """Verify US thousands, European decimal commas, currency symbols, and k/m suffixes."""
     num_topic = Topic(
         name="annual_budget",
-        data_type=TopicDataType.NUMBER,
+        data_type="number",
         cardinality=TopicCardinality.SINGLE,
         update_policy=UpdatePolicy.REPLACE,
     )
-    norm_str, structured, valid = coerce_and_validate_value("$25,000", num_topic)
-    assert valid is True
-    assert norm_str == "25000"
-    assert structured == 25000
+
+    assert validate_and_coerce_value("$25,000", num_topic) == ("25000", 25000, True)
+    assert validate_and_coerce_value("4,5", num_topic) == ("4.5", 4.5, True)
+    assert validate_and_coerce_value("€1.250,50", num_topic) == ("1250.5", 1250.5, True)
+    assert validate_and_coerce_value("USD 1,250.50", num_topic) == ("1250.5", 1250.5, True)
+    assert validate_and_coerce_value("50k", num_topic) == ("50000", 50000, True)
+    assert validate_and_coerce_value("not_a_number", num_topic)[2] is False
 
 
 @pytest.mark.asyncio
-async def test_state_resolution_cardinality_single_vs_multiple(db_session):
-    """Verify multiple-cardinality topics coexist while single-cardinality topics supersede."""
-    sports_topic = Topic(
+async def test_multi_valued_supersession_safety(db_session: AsyncSession):
+    """
+    If a multi-valued topic receives SUPERSEDE without a valid target_memory_id,
+    it must NOT overwrite an arbitrary preference (e.g. Nike); it quarantines to PENDING_REVIEW.
+    When target_memory_id IS provided, only that targeted preference is superseded.
+    """
+    brand_topic = Topic(
         workspace_id=1,
-        name="sports_preferences",
-        data_type=TopicDataType.LIST,
+        name="brand_preferences",
+        data_type="text",
         cardinality=TopicCardinality.MULTIPLE,
         update_policy=UpdatePolicy.APPEND,
     )
-    budget_topic = Topic(
-        workspace_id=1,
-        name="annual_budget",
-        data_type=TopicDataType.NUMBER,
-        cardinality=TopicCardinality.SINGLE,
-        update_policy=UpdatePolicy.REPLACE,
-    )
-    entity = Entity(workspace_id=1, external_id="cust_1", name="Alex Rivera")
-    db_session.add_all([sports_topic, budget_topic, entity])
+    entity = Entity(workspace_id=1, external_id="cust_brands", name="Alex Rivera")
+    db_session.add_all([brand_topic, entity])
     await db_session.flush()
 
     ep1 = Episode(
         workspace_id=1,
         entity_id=entity.id,
-        content="I run in Nike shoes and my annual budget is $10,000.",
+        content="I regularly buy Nike, Adidas, and Salomon gear.",
     )
     db_session.add(ep1)
     await db_session.flush()
 
-    out1 = ExtractionOutput(
+    init_claims = ExtractionResult(
         claims=[
             ExtractedClaim(
-                claim="Likes Nike running shoes",
-                topic_name="sports_preferences",
+                claim="Likes Nike",
+                topic_name="brand_preferences",
                 value="Nike",
-                claim_type=ClaimType.EXPLICIT,
                 operation=ClaimOperation.ADD,
                 confidence=0.95,
-                excerpt="I run in Nike shoes",
+                evidence_excerpt="buy Nike",
             ),
             ExtractedClaim(
-                claim="Annual budget is $10,000",
-                topic_name="annual_budget",
-                value="$10,000",
-                claim_type=ClaimType.EXPLICIT,
+                claim="Likes Adidas",
+                topic_name="brand_preferences",
+                value="Adidas",
                 operation=ClaimOperation.ADD,
                 confidence=0.95,
-                excerpt="my annual budget is $10,000",
+                evidence_excerpt="Adidas",
+            ),
+            ExtractedClaim(
+                claim="Likes Salomon",
+                topic_name="brand_preferences",
+                value="Salomon",
+                operation=ClaimOperation.ADD,
+                confidence=0.95,
+                evidence_excerpt="Salomon gear",
             ),
         ]
     )
-    await process_extracted_claims(
-        db_session, entity, ep1, out1, [sports_topic, budget_topic]
-    )
+    created, _, _ = await process_extracted_claims(db_session, entity, ep1, init_claims, [brand_topic])
     await db_session.commit()
+    adidas_mem = next(m for m in created if m.value == "Adidas")
 
-    # Episode 2: Adds Salomon shoes (coexists) and updates budget to $15,000 (supersedes)
+    # Case 1: Ambiguous SUPERSEDE without target_memory_id -> must NOT corrupt Nike!
     ep2 = Episode(
         workspace_id=1,
         entity_id=entity.id,
-        content="I recently started buying Salomon trail shoes and raised my annual budget to $15,000.",
+        content="I have stopped buying Adidas.",
     )
     db_session.add(ep2)
     await db_session.flush()
 
-    out2 = ExtractionOutput(
+    ambiguous = ExtractionResult(
         claims=[
             ExtractedClaim(
-                claim="Buys Salomon trail shoes",
-                topic_name="sports_preferences",
-                value="Salomon",
-                claim_type=ClaimType.EXPLICIT,
-                operation=ClaimOperation.SUPERSEDE,  # Even if LLM proposes supersede, APPEND policy preserves coexistence
-                confidence=0.95,
-                excerpt="recently started buying Salomon trail shoes",
-            ),
-            ExtractedClaim(
-                claim="Annual budget is $15,000",
-                topic_name="annual_budget",
-                value="$15,000",
-                claim_type=ClaimType.EXPLICIT,
+                claim="Stopped buying Adidas",
+                topic_name="brand_preferences",
+                value="no_adidas",
                 operation=ClaimOperation.SUPERSEDE,
+                target_memory_id=None,
                 confidence=0.95,
-                excerpt="raised my annual budget to $15,000",
-            ),
+                evidence_excerpt="stopped buying Adidas",
+            )
         ]
     )
-    all_mems, updated_count, new_count = await process_extracted_claims(
-        db_session, entity, ep2, out2, [sports_topic, budget_topic]
-    )
+    affected_ambig, _, _ = await process_extracted_claims(db_session, entity, ep2, ambiguous, [brand_topic])
     await db_session.commit()
 
-    assert new_count == 2
-    assert updated_count == 1  # Only annual_budget was superseded
+    assert affected_ambig[0].status == MemoryStatus.PENDING_REVIEW
 
-    # Check active memories
-    from sqlalchemy import select
-    from cluestate.models import Memory
-
-    res = await db_session.execute(
-        select(Memory).where(Memory.entity_id == entity.id)
+    res_active = await db_session.execute(
+        select(Memory).where(Memory.entity_id == entity.id, Memory.status == MemoryStatus.ACTIVE)
     )
-    memories = list(res.scalars().all())
-    active_sports = [
-        m for m in memories if m.topic_id == sports_topic.id and m.status == MemoryStatus.ACTIVE
-    ]
-    active_budget = [
-        m for m in memories if m.topic_id == budget_topic.id and m.status == MemoryStatus.ACTIVE
-    ]
-    superseded_budget = [
-        m for m in memories if m.topic_id == budget_topic.id and m.status == MemoryStatus.SUPERSEDED
-    ]
+    active_values = {m.value for m in res_active.scalars().all()}
+    assert active_values == {"Nike", "Adidas", "Salomon"}
 
-    assert len(active_sports) == 2  # Both Nike and Salomon remain active!
-    assert len(active_budget) == 1
-    assert active_budget[0].value == "15000"
-    assert len(superseded_budget) == 1
-    assert superseded_budget[0].value == "10000"
+    # Case 2: Explicit target_memory_id targeting Adidas -> supersedes ONLY Adidas
+    ep3 = Episode(
+        workspace_id=1,
+        entity_id=entity.id,
+        content="Confirming I switched from Adidas to Brooks.",
+    )
+    db_session.add(ep3)
+    await db_session.flush()
+
+    targeted = ExtractionResult(
+        claims=[
+            ExtractedClaim(
+                claim="Likes Brooks",
+                topic_name="brand_preferences",
+                value="Brooks",
+                operation=ClaimOperation.SUPERSEDE,
+                target_memory_id=adidas_mem.id,
+                confidence=0.95,
+                evidence_excerpt="switched from Adidas to Brooks",
+            )
+        ]
+    )
+    await process_extracted_claims(db_session, entity, ep3, targeted, [brand_topic])
+    await db_session.commit()
+
+    res_after = await db_session.execute(
+        select(Memory).where(Memory.entity_id == entity.id, Memory.status == MemoryStatus.ACTIVE)
+    )
+    assert {m.value for m in res_after.scalars().all()} == {"Nike", "Salomon", "Brooks"}
 
 
 @pytest.mark.asyncio
-async def test_python_sdk_client(db_session):
-    """Test AsyncClueState SDK resource methods against the FastAPI ASGI app."""
-    async def override_get_db():
+async def test_strict_schema_contract_quarantines_invalid_enum(db_session: AsyncSession):
+    """Schema-invalid values (e.g. 'WhatsApp' outside allowed enum) must be quarantined to PENDING_REVIEW."""
+    comm_topic = Topic(
+        workspace_id=1,
+        name="communication_preference",
+        data_type="enum",
+        cardinality=TopicCardinality.SINGLE,
+        update_policy=UpdatePolicy.REPLACE,
+        enum_values=["email", "phone", "sms"],
+    )
+    entity = Entity(workspace_id=1, external_id="cust_schema", name="Dana")
+    db_session.add_all([comm_topic, entity])
+    await db_session.flush()
+
+    ep = Episode(
+        workspace_id=1,
+        entity_id=entity.id,
+        content="Please message me on WhatsApp.",
+    )
+    db_session.add(ep)
+    await db_session.flush()
+
+    out = ExtractionResult(
+        claims=[
+            ExtractedClaim(
+                claim="Prefers WhatsApp messaging",
+                topic_name="communication_preference",
+                value="WhatsApp",
+                operation=ClaimOperation.ADD,
+                confidence=0.95,
+                evidence_excerpt="message me on WhatsApp",
+            )
+        ]
+    )
+    affected, _, _ = await process_extracted_claims(db_session, entity, ep, out, [comm_topic])
+    await db_session.commit()
+
+    assert len(affected) == 1
+    assert affected[0].status == MemoryStatus.PENDING_REVIEW
+
+    # Must NOT appear in active intel prompt
+    intel_text = await format_entity_intel(db_session, entity)
+    assert "WhatsApp" not in intel_text
+
+
+@pytest.mark.asyncio
+async def test_late_arriving_out_of_order_event_does_not_overwrite_newer_state(db_session: AsyncSession):
+    """An Oct 10 historical event ingested after an Oct 20 event must NOT overwrite the Oct 20 state."""
+    addr_topic = Topic(
+        workspace_id=1,
+        name="delivery_address",
+        data_type="text",
+        cardinality=TopicCardinality.SINGLE,
+        update_policy=UpdatePolicy.REPLACE,
+        temporal=True,
+    )
+    entity = Entity(workspace_id=1, external_id="cust_temporal", name="Liam")
+    db_session.add_all([addr_topic, entity])
+    await db_session.flush()
+
+    oct_20 = datetime(2026, 10, 20, 12, 0, tzinfo=timezone.utc)
+    oct_10 = datetime(2026, 10, 10, 9, 0, tzinfo=timezone.utc)
+
+    # First ingested: Newer interaction from Oct 20
+    ep_newer = Episode(
+        workspace_id=1,
+        entity_id=entity.id,
+        content="My new delivery address is 200 Market St.",
+        occurred_at=oct_20,
+    )
+    db_session.add(ep_newer)
+    await db_session.flush()
+
+    await process_extracted_claims(
+        db_session,
+        entity,
+        ep_newer,
+        ExtractionResult(
+            claims=[
+                ExtractedClaim(
+                    claim="Delivery address is 200 Market St",
+                    topic_name="delivery_address",
+                    value="200 Market St",
+                    operation=ClaimOperation.ADD,
+                    confidence=0.95,
+                    evidence_excerpt="new delivery address is 200 Market St",
+                )
+            ]
+        ),
+        [addr_topic],
+    )
+    await db_session.commit()
+
+    # Second ingested (delayed backfill): Older interaction from Oct 10
+    ep_older = Episode(
+        workspace_id=1,
+        entity_id=entity.id,
+        content="Ship my package to 10 Old Oak Rd.",
+        occurred_at=oct_10,
+    )
+    db_session.add(ep_older)
+    await db_session.flush()
+
+    affected_old, _, _ = await process_extracted_claims(
+        db_session,
+        entity,
+        ep_older,
+        ExtractionResult(
+            claims=[
+                ExtractedClaim(
+                    claim="Delivery address is 10 Old Oak Rd",
+                    topic_name="delivery_address",
+                    value="10 Old Oak Rd",
+                    operation=ClaimOperation.SUPERSEDE,
+                    confidence=0.95,
+                    evidence_excerpt="Ship my package to 10 Old Oak Rd",
+                )
+            ]
+        ),
+        [addr_topic],
+    )
+    await db_session.commit()
+
+    # Older claim must be recorded directly as historical SUPERSEDED [Oct 10 -> Oct 20]
+    assert affected_old[0].status == MemoryStatus.SUPERSEDED
+    assert affected_old[0].valid_to is not None
+
+    # Active claim must still be 200 Market St from Oct 20
+    active_res = await db_session.execute(
+        select(Memory).where(Memory.entity_id == entity.id, Memory.status == MemoryStatus.ACTIVE)
+    )
+    active_list = list(active_res.scalars().all())
+    assert len(active_list) == 1
+    assert active_list[0].value == "200 Market St"
+    assert affected_old[0].superseded_by_id == active_list[0].id
+
+
+@pytest.mark.asyncio
+async def test_support_does_not_arbitrarily_inflate_confidence(db_session: AsyncSession):
+    """Supporting an existing memory attaches evidence without arbitrary +0.05 confidence inflation."""
+    entity = Entity(workspace_id=1, external_id="cust_conf", name="Nora")
+    db_session.add(entity)
+    await db_session.flush()
+
+    ep1 = Episode(workspace_id=1, entity_id=entity.id, content="I prefer dark mode.")
+    db_session.add(ep1)
+    await db_session.flush()
+
+    mems1, _, _ = await process_extracted_claims(
+        db_session,
+        entity,
+        ep1,
+        ExtractionResult(
+            claims=[
+                ExtractedClaim(
+                    claim="Prefers dark mode",
+                    value="dark",
+                    claim_type=ClaimType.EXPLICIT,
+                    operation=ClaimOperation.ADD,
+                    confidence=0.80,
+                    evidence_excerpt="prefer dark mode",
+                )
+            ]
+        ),
+        [],
+    )
+    await db_session.commit()
+    mem = mems1[0]
+    assert mem.confidence == 0.80
+
+    ep2 = Episode(workspace_id=1, entity_id=entity.id, content="Still using dark mode daily.")
+    db_session.add(ep2)
+    await db_session.flush()
+
+    await process_extracted_claims(
+        db_session,
+        entity,
+        ep2,
+        ExtractionResult(
+            claims=[
+                ExtractedClaim(
+                    claim="Prefers dark mode",
+                    value="dark",
+                    operation=ClaimOperation.SUPPORT,
+                    target_memory_id=mem.id,
+                    confidence=0.80,
+                    evidence_excerpt="using dark mode daily",
+                )
+            ]
+        ),
+        [],
+    )
+    await db_session.commit()
+
+    assert mem.confidence == 0.80
+    ev_res = await db_session.execute(select(Evidence).where(Evidence.memory_id == mem.id))
+    assert len(ev_res.scalars().all()) == 2
+
+
+@pytest.mark.asyncio
+async def test_multi_tenant_isolation_and_api_key_privilege_separation(db_session: AsyncSession):
+    """
+    1. Two workspaces with identical external_id ('shared_cust_1') cannot read or list each other's state.
+    2. Scoped API keys (cs_live_...) receive 403 Forbidden on /api/auth/api-keys management endpoints.
+    """
+    app = create_app()
+
+    async def override_get_session():
         yield db_session
 
-    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_session] = override_get_session
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as ac:
+        # Sign up Tenant A
+        res_a = await ac.post(
+            "/api/auth/signup",
+            json={
+                "email": "a@tenant-a.com",
+                "password": "PasswordTenantA1!",
+                "full_name": "Alice A",
+                "workspace_name": "Tenant A",
+            },
+        )
+        assert res_a.status_code == 201
+        jwt_a = res_a.json()["access_token"]
+        key_a = res_a.json()["initial_api_key"]
+
+        # Sign up Tenant B
+        res_b = await ac.post(
+            "/api/auth/signup",
+            json={
+                "email": "b@tenant-b.com",
+                "password": "PasswordTenantB1!",
+                "full_name": "Bob B",
+                "workspace_name": "Tenant B",
+            },
+        )
+        assert res_b.status_code == 201
+        key_b = res_b.json()["initial_api_key"]
+
+        # Both workspaces create an entity with the EXACT SAME external_id
+        ent_a = await ac.post(
+            "/api/entities",
+            headers={"Authorization": f"Bearer {key_a}"},
+            json={"external_id": "shared_cust_1", "name": "Secret Customer A"},
+        )
+        assert ent_a.status_code == 201
+        ent_a_id = ent_a.json()["id"]
+
+        ent_b = await ac.post(
+            "/api/entities",
+            headers={"Authorization": f"Bearer {key_b}"},
+            json={"external_id": "shared_cust_1", "name": "Secret Customer B"},
+        )
+        assert ent_b.status_code == 201
+
+        # Tenant A intel lookup only sees Secret Customer A
+        intel_a = await ac.get(
+            "/api/intel/by-external-id/shared_cust_1",
+            headers={"Authorization": f"Bearer {key_a}"},
+        )
+        assert intel_a.status_code == 200
+        assert intel_a.json()["entity_name"] == "Secret Customer A"
+
+        # Tenant B cannot fetch Tenant A's internal entity_id directly (must get 404)
+        cross_read = await ac.get(
+            f"/api/entities/{ent_a_id}",
+            headers={"Authorization": f"Bearer {key_b}"},
+        )
+        assert cross_read.status_code == 404
+
+        # API Key RBAC: cs_live_ key MUST be forbidden (403) from listing or creating API keys
+        forbid_list = await ac.get(
+            "/api/auth/api-keys",
+            headers={"Authorization": f"Bearer {key_a}"},
+        )
+        assert forbid_list.status_code == 403
+
+        forbid_create = await ac.post(
+            "/api/auth/api-keys",
+            headers={"Authorization": f"Bearer {key_a}"},
+            json={"name": "Backdoor Key"},
+        )
+        assert forbid_create.status_code == 403
+
+        # User JWT session CAN list and create API keys
+        allow_list = await ac.get(
+            "/api/auth/api-keys",
+            headers={"Authorization": f"Bearer {jwt_a}"},
+        )
+        assert allow_list.status_code == 200
+        assert len(allow_list.json()) == 1
+
+
+@pytest.mark.asyncio
+async def test_python_sdk_client(db_session: AsyncSession):
+    """Test AsyncClueState SDK resource methods against the FastAPI ASGI app."""
+    app = create_app()
+
+    async def override_get_session():
+        yield db_session
+
+    app.dependency_overrides[get_session] = override_get_session
     token = create_access_token(user_id=1, workspace_id=1, email="test@cluestate.com")
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(
         transport=transport,
-        base_url="http://testserver",
+        base_url="http://testserver/api",
         headers={"Authorization": f"Bearer {token}"},
     ) as http_client:
         sdk = AsyncClueState(
@@ -226,33 +502,30 @@ async def test_python_sdk_client(db_session):
             data_type="enum",
             cardinality="single",
             update_policy="replace",
-            allowed_values=["free", "pro", "enterprise"],
+            enum_values=["free", "pro", "enterprise"],
         )
         assert topic.name == "account_tier"
         assert topic.cardinality.value == "single"
 
         # 2. Create an entity via SDK
         entity = await sdk.entities.create(
-            name="Elena Rostova",
             external_id="usr_elena_1",
-            entity_type="customer",
+            name="Elena Rostova",
+            entity_type=EntityType.PERSON,
         )
         assert entity.external_id == "usr_elena_1"
 
         # 3. List entities via SDK
-        page = await sdk.entities.list(search="Elena")
-        assert page.total == 1
-        assert page.entities[0].name == "Elena Rostova"
+        entities = await sdk.entities.list(search="Elena")
+        assert len(entities) == 1
+        assert entities[0].name == "Elena Rostova"
 
-        # 4. Get customer intelligence state via SDK
-        intel = await sdk.get_intel(external_id="usr_elena_1")
-        assert intel.entity.name == "Elena Rostova"
+        # 4. Get entity intelligence state via SDK
+        intel = await sdk.get_intel("usr_elena_1")
+        assert intel.entity_name == "Elena Rostova"
         assert "Elena Rostova" in intel.formatted_prompt
 
         # 5. Verify ClueStateError on 404
         with pytest.raises(ClueStateError) as exc_info:
-            await sdk.get_intel(external_id="non_existent_customer")
+            await sdk.get_intel("non_existent_customer")
         assert exc_info.value.status_code == 404
-
-    app.dependency_overrides.clear()
-

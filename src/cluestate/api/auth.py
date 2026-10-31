@@ -2,6 +2,7 @@
 
 import re
 import secrets
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,7 +23,6 @@ from ..security import (
     create_access_token,
     generate_api_key,
     get_current_user,
-    get_current_workspace,
     hash_password,
     verify_password,
 )
@@ -143,10 +143,11 @@ async def get_me(auth: tuple[User, Workspace] = Depends(get_current_user)):
 
 @router.get("/api-keys", response_model=list[ApiKeyRead])
 async def list_api_keys(
-    workspace: Workspace = Depends(get_current_workspace),
+    auth: tuple[User, Workspace] = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    """List all active API keys for the current workspace."""
+    """List all active API keys for the current workspace (requires user session)."""
+    _, workspace = auth
     result = await session.execute(
         select(ApiKey)
         .where(ApiKey.workspace_id == workspace.id, ApiKey.is_active == True)
@@ -158,10 +159,11 @@ async def list_api_keys(
 @router.post("/api-keys", response_model=ApiKeyCreatedResponse, status_code=201)
 async def create_api_key(
     body: ApiKeyCreate,
-    workspace: Workspace = Depends(get_current_workspace),
+    auth: tuple[User, Workspace] = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    """Generate a new scoped API key for the current workspace."""
+    """Generate a new scoped API key for the current workspace (requires user session)."""
+    _, workspace = auth
     raw_key, key_prefix, key_hash = generate_api_key()
     api_key = ApiKey(
         workspace_id=workspace.id,
@@ -182,10 +184,11 @@ async def create_api_key(
 @router.delete("/api-keys/{key_id}", status_code=204)
 async def revoke_api_key(
     key_id: int,
-    workspace: Workspace = Depends(get_current_workspace),
+    auth: tuple[User, Workspace] = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    """Revoke and delete a workspace API key."""
+    """Revoke and delete a workspace API key (requires user session)."""
+    _, workspace = auth
     api_key = await session.get(ApiKey, key_id)
     if not api_key or api_key.workspace_id != workspace.id:
         raise HTTPException(status_code=404, detail="API key not found")

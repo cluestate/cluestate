@@ -141,10 +141,16 @@ export const api = {
     request<Episode[]>(`/entities/${id}/episodes?limit=${limit}`),
 
   // Memories
-  getEntityMemories: (entityId: number, status?: MemoryStatus, topicId?: number) => {
+  getEntityMemories: (
+    entityId: number,
+    status?: MemoryStatus,
+    topicId?: number,
+    includeAll: boolean = false
+  ) => {
     let url = `/entities/${entityId}/memories?`;
     if (status) url += `status=${status}&`;
     if (topicId) url += `topic_id=${topicId}&`;
+    if (includeAll) url += `include_all=true&`;
     return request<Memory[]>(url);
   },
 

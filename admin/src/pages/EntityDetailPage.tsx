@@ -48,7 +48,7 @@ export const EntityDetailPage: React.FC<EntityDetailPageProps> = ({
       setIsLoading(true);
       const [entData, memData, epData, intelData] = await Promise.all([
         api.getEntity(entityId),
-        api.getEntityMemories(entityId),
+        api.getEntityMemories(entityId, undefined, undefined, true),
         api.getEntityEpisodes(entityId),
         api.getEntityIntel(entityId),
       ]);
@@ -70,7 +70,7 @@ export const EntityDetailPage: React.FC<EntityDetailPageProps> = ({
   const handleUpdateStatus = async (memoryId: number, status: MemoryStatus) => {
     try {
       await api.updateMemory(memoryId, { status });
-      const updatedMemories = await api.getEntityMemories(entityId);
+      const updatedMemories = await api.getEntityMemories(entityId, undefined, undefined, true);
       setMemories(updatedMemories);
       const updatedIntel = await api.getEntityIntel(entityId);
       setIntel(updatedIntel);
@@ -132,6 +132,11 @@ export const EntityDetailPage: React.FC<EntityDetailPageProps> = ({
   const uniqueTopics = Array.from(
     new Set(memories.map((m) => m.topic_name).filter(Boolean) as string[])
   );
+
+  const activeFactCount = memories.filter(
+    (m) => m.status === 'active' || m.status === 'confirmed'
+  ).length;
+  const pendingReviewCount = memories.filter((m) => m.status === 'pending_review').length;
 
   const filteredMemories = memories.filter((m) => {
     if (selectedTopic !== 'all' && m.topic_name !== selectedTopic) return false;
@@ -212,8 +217,13 @@ export const EntityDetailPage: React.FC<EntityDetailPageProps> = ({
                   {entity.entity_type}
                 </span>
                 <span className="badge badge-success">
-                  {memories.length} Active Fact{memories.length === 1 ? '' : 's'}
+                  {activeFactCount} Active Fact{activeFactCount === 1 ? '' : 's'}
                 </span>
+                {pendingReviewCount > 0 && (
+                  <span className="badge badge-warning">
+                    {pendingReviewCount} Pending Review
+                  </span>
+                )}
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '6px', fontSize: '13px', color: 'var(--text-secondary)' }}>
@@ -307,16 +317,16 @@ export const EntityDetailPage: React.FC<EntityDetailPageProps> = ({
               ))}
             </div>
 
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
               <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Status:</span>
-              {(['all', 'confirmed', 'active', 'rejected', 'superseded'] as const).map((st) => (
+              {(['all', 'confirmed', 'active', 'pending_review', 'superseded', 'rejected'] as const).map((st) => (
                 <button
                   key={st}
                   className={`btn btn-sm ${statusFilter === st ? 'btn-primary' : 'btn-secondary'}`}
                   onClick={() => setStatusFilter(st)}
                   style={{ textTransform: 'capitalize' }}
                 >
-                  {st}
+                  {st === 'pending_review' ? 'Pending Review' : st}
                 </button>
               ))}
             </div>

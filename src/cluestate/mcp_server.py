@@ -91,6 +91,7 @@ def create_mcp_server() -> "MCPServer":
                 return "\n".join(lines)
 
         from sqlalchemy import select
+
         from .database import get_session_factory, init_db
         from .engine import (
             ExtractionError,
@@ -213,6 +214,7 @@ def create_mcp_server() -> "MCPServer":
                 return res.json().get("formatted_prompt", "No claims recorded.")
 
         from sqlalchemy import select
+
         from .database import get_session_factory, init_db
         from .engine import format_entity_intel
         from .models import Entity
@@ -291,6 +293,7 @@ def create_mcp_server() -> "MCPServer":
                 return "\n".join(lines)
 
         from sqlalchemy import select
+
         from .database import get_session_factory, init_db
         from .models import Entity, Evidence, Memory, MemoryStatus, Topic
 
@@ -376,6 +379,7 @@ def create_mcp_server() -> "MCPServer":
                 return "\n".join(lines)
 
         from sqlalchemy import func, select
+
         from .database import get_session_factory, init_db
         from .models import Entity, Memory, MemoryStatus
 
@@ -436,6 +440,7 @@ def create_mcp_server() -> "MCPServer":
                 return f"Memory #{memory_id} deleted."
 
         from sqlalchemy import delete, update
+
         from .database import get_session_factory, init_db
         from .models import Evidence, Memory
 

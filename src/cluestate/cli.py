@@ -10,7 +10,7 @@ from .config import get_settings
 @click.group()
 @click.version_option(version=__version__, prog_name="cluestate")
 def cli():
-    """ClueState — Entity Memory & Intelligence Engine."""
+    """ClueState — Evidence-backed customer and entity intelligence infrastructure."""
     pass
 
 
@@ -34,15 +34,30 @@ def serve(host, port, reload, log_level):
 
 @cli.command()
 def init():
-    """Initialize the database (create tables)."""
+    """Initialize or migrate the database to the latest schema."""
     import asyncio
+
     from .database import init_db
 
     async def _init():
         await init_db()
-        click.secho("[OK] Database initialized successfully.", fg="green")
+        click.secho("[OK] Database migrated and initialized successfully.", fg="green")
 
     asyncio.run(_init())
+
+
+@cli.command()
+def migrate():
+    """Run Alembic database migrations up to 'head'."""
+    import asyncio
+
+    from .database import init_db
+
+    async def _migrate():
+        await init_db()
+        click.secho("[OK] Alembic migrations applied (head).", fg="green")
+
+    asyncio.run(_migrate())
 
 
 @cli.command()
@@ -54,7 +69,12 @@ def check():
     click.echo(f"  Database:  {settings.database_url}")
     click.echo(f"  LLM Model: {settings.llm_model}")
     click.echo(f"  Host:      {settings.host}:{settings.port}")
-    click.echo(f"  API Key:   {'SET' if settings.api_key else 'NOT SET (open access)'}")
+    auth_mode = (
+        "Workspace Auth + Static Master Key"
+        if settings.api_key
+        else "Workspace Auth (JWT + cs_live_ API keys enforced)"
+    )
+    click.echo(f"  Auth Mode: {auth_mode}")
 
     # Check LLM key
     model_prefix = settings.llm_model.split("/")[0] if "/" in settings.llm_model else ""

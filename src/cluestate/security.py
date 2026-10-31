@@ -221,12 +221,19 @@ async def get_current_user(
     request: Request,
     session: AsyncSession = Depends(get_session),
 ) -> tuple[User, Workspace]:
-    """Require an interactive User JWT session token and return (User, Workspace)."""
+    """Require an interactive User JWT session token (rejects cs_ API keys with 403)."""
     token = _extract_bearer_token(request)
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required",
+        )
+
+    settings = get_settings()
+    if token.startswith("cs_") or (settings.api_key and hmac.compare_digest(token, settings.api_key)):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="API keys cannot perform user or API-key administration. Authenticate with a user session token.",
         )
 
     payload = decode_access_token(token)

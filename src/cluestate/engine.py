@@ -130,6 +130,68 @@ def verify_evidence_excerpt(source_text: str, excerpt: str) -> tuple[bool, Optio
     return False, None, None
 
 
+def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
+    """Normalize naive or timezone-aware datetimes to UTC for safe chronological comparison."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _parse_locale_number(raw: str) -> Optional[float]:
+    """
+    Parse numbers supporting currency symbols/codes, k/m suffixes,
+    US format ('25,000.50'), and European decimal format ('4,5' or '1.250,50').
+    """
+    cleaned = raw.strip()
+    if not cleaned:
+        return None
+
+    # Strip common currency symbols and ISO currency codes
+    cleaned = re.sub(r"(?i)\b(usd|eur|gbp|czk|cad|aud|chf|jpy)\b", "", cleaned)
+    cleaned = re.sub(r"[$€£¥\s]", "", cleaned)
+    if not cleaned:
+        return None
+
+    multiplier = 1.0
+    lower = cleaned.lower()
+    if lower.endswith("k"):
+        multiplier = 1_000.0
+        cleaned = cleaned[:-1]
+    elif lower.endswith("m"):
+        multiplier = 1_000_000.0
+        cleaned = cleaned[:-1]
+    elif lower.endswith("b"):
+        multiplier = 1_000_000_000.0
+        cleaned = cleaned[:-1]
+
+    if not cleaned:
+        return None
+
+    if "," in cleaned and "." in cleaned:
+        # Both separators present: whichever comes last is the decimal separator
+        if cleaned.rfind(",") > cleaned.rfind("."):
+            # European: 1.250,50 -> 1250.50
+            cleaned = cleaned.replace(".", "").replace(",", ".")
+        else:
+            # US/UK: 1,250.50 -> 1250.50
+            cleaned = cleaned.replace(",", "")
+    elif "," in cleaned:
+        # Only comma(s) present: check if thousands separator (e.g. 25,000 or 1,250,000) vs decimal comma (4,5 or 19,99)
+        if re.fullmatch(r"[+-]?\d{1,3}(,\d{3})+", cleaned):
+            cleaned = cleaned.replace(",", "")
+        elif cleaned.count(",") == 1:
+            cleaned = cleaned.replace(",", ".")
+        else:
+            cleaned = cleaned.replace(",", "")
+
+    try:
+        return float(cleaned) * multiplier
+    except ValueError:
+        return None
+
+
 def validate_and_coerce_value(
     raw_value: str,
     topic: Optional[Topic],
@@ -154,22 +216,13 @@ def validate_and_coerce_value(
         return val_str, None, False
 
     if dtype == "number":
-        cleaned_num = re.sub(r"[,$\s]", "", val_str)
-        multiplier = 1.0
-        if cleaned_num.lower().endswith("k"):
-            multiplier = 1_000.0
-            cleaned_num = cleaned_num[:-1]
-        elif cleaned_num.lower().endswith("m"):
-            multiplier = 1_000_000.0
-            cleaned_num = cleaned_num[:-1]
-        try:
-            num = float(cleaned_num) * multiplier
-            if num.is_integer():
-                num_int = int(num)
-                return str(num_int), num_int, True
-            return str(num), num, True
-        except ValueError:
+        num = _parse_locale_number(val_str)
+        if num is None:
             return val_str, None, False
+        if num.is_integer():
+            num_int = int(num)
+            return str(num_int), num_int, True
+        return str(num), num, True
 
     if dtype == "enum":
         allowed = [str(v).strip() for v in (topic.enum_values or []) if str(v).strip()]
@@ -290,6 +343,37 @@ async def extract_memories_from_text(
 # State Persistence & Resolution Engine
 # ──────────────────────────────────────────────
 
+async def _attach_evidence_if_missing(
+    session: AsyncSession,
+    memory_id: int,
+    episode_id: int,
+    excerpt: str,
+    is_verified: bool,
+    char_start: Optional[int],
+    char_end: Optional[int],
+    content_hash: str,
+) -> None:
+    """Attach an Evidence link if this episode is not already linked to the memory."""
+    existing_ev = await session.execute(
+        select(Evidence).where(
+            Evidence.memory_id == memory_id,
+            Evidence.episode_id == episode_id,
+        )
+    )
+    if existing_ev.scalars().first() is None:
+        session.add(
+            Evidence(
+                memory_id=memory_id,
+                episode_id=episode_id,
+                excerpt=excerpt,
+                is_verified=is_verified,
+                char_start=char_start,
+                char_end=char_end,
+                content_hash=content_hash,
+            )
+        )
+
+
 async def process_extracted_claims(
     session: AsyncSession,
     entity: Entity,
@@ -298,25 +382,31 @@ async def process_extracted_claims(
     topics: list[Topic],
 ) -> tuple[list[Memory], int, int]:
     """
-    Validate extracted claims, verify source evidence, and apply state transitions
-    according to topic cardinality and update policies.
+    Validate extracted claims, verify source evidence, and apply event-time-aware
+    state transitions according to topic cardinality and update policies.
 
     Returns: (affected_memories, new_count, updated_count)
     """
     settings = get_settings()
     topic_map = {t.name.lower(): t for t in topics}
     now = datetime.now(timezone.utc)
+    event_time = _ensure_utc(episode.occurred_at) or now
     ep_hash = episode.content_hash or compute_content_hash(episode.content)
 
-    # Load current active/confirmed memories for this entity
+    # Load current active/confirmed memories strictly scoped to this entity and workspace
     existing_res = await session.execute(
         select(Memory).where(
+            Memory.workspace_id == entity.workspace_id,
             Memory.entity_id == entity.id,
             Memory.status.in_([MemoryStatus.ACTIVE, MemoryStatus.CONFIRMED]),
         )
     )
     active_memories = list(existing_res.scalars().all())
-    active_by_id: dict[int, Memory] = {m.id: m for m in active_memories if m.id is not None}
+    active_by_id: dict[int, Memory] = {
+        m.id: m
+        for m in active_memories
+        if m.id is not None and m.entity_id == entity.id and m.workspace_id == entity.workspace_id
+    }
 
     new_count = 0
     updated_count = 0
@@ -337,93 +427,119 @@ async def process_extracted_claims(
         )
         effective_confidence = claim.confidence
         if not is_verified:
-            # Penalize unverified excerpts
             effective_confidence = min(effective_confidence, 0.45)
 
-        # 3. Validate & Coerce Value against Topic Schema
+        # 3. Enforce Topic Schema as a Strict Contract
         norm_val, structured_val, is_type_valid = validate_and_coerce_value(claim.value, topic)
         if not is_type_valid:
-            effective_confidence = min(effective_confidence, 0.5)
+            # Quarantine schema-invalid values so they never pollute active state
+            quarantined = Memory(
+                workspace_id=entity.workspace_id,
+                entity_id=entity.id,
+                topic_id=topic.id if topic else None,
+                claim=claim.claim,
+                value=norm_val,
+                structured_value=None,
+                claim_type=claim.claim_type,
+                confidence=effective_confidence,
+                status=MemoryStatus.PENDING_REVIEW,
+                valid_from=event_time,
+            )
+            session.add(quarantined)
+            await session.flush()
+            await _attach_evidence_if_missing(
+                session, quarantined.id, episode.id, claim.evidence_excerpt,
+                is_verified, char_start, char_end, ep_hash,
+            )
+            new_count += 1
+            affected_memories.append(quarantined)
+            continue
 
-        # 4. Check for exact duplicate claim text or explicit SUPPORT operation
-        target_mem: Optional[Memory] = None
+        # 4. Resolve Explicit Target Memory & Exact Duplicate Check
+        explicit_target: Optional[Memory] = None
         if claim.target_memory_id and claim.target_memory_id in active_by_id:
-            target_mem = active_by_id[claim.target_memory_id]
+            candidate = active_by_id[claim.target_memory_id]
+            if candidate.entity_id == entity.id and candidate.workspace_id == entity.workspace_id:
+                explicit_target = candidate
 
-        if not target_mem:
-            for existing in active_memories:
-                if existing.claim.strip().lower() == claim.claim.strip().lower():
-                    target_mem = existing
-                    break
+        exact_claim_match: Optional[Memory] = None
+        for existing in active_memories:
+            if existing.claim.strip().lower() == claim.claim.strip().lower():
+                exact_claim_match = existing
+                break
 
-        if claim.operation == ClaimOperation.SUPPORT and target_mem:
-            # Attach supporting evidence to the existing memory
-            target_mem.confidence = min(1.0, round(max(target_mem.confidence, effective_confidence) + 0.05, 2))
-            target_mem.updated_at = now
-            evidence = Evidence(
-                memory_id=target_mem.id,
-                episode_id=episode.id,
-                excerpt=claim.evidence_excerpt,
-                is_verified=is_verified,
-                char_start=char_start,
-                char_end=char_end,
-                content_hash=ep_hash,
+        support_target = explicit_target if claim.operation == ClaimOperation.SUPPORT else None
+        if not support_target and exact_claim_match:
+            if claim.operation in (ClaimOperation.ADD, ClaimOperation.SUPPORT):
+                support_target = exact_claim_match
+
+        if support_target:
+            # Keep confidence calibrated (no arbitrary increments); track corroborating evidence separately
+            if is_verified:
+                support_target.confidence = max(support_target.confidence, effective_confidence)
+            support_target.updated_at = now
+            await _attach_evidence_if_missing(
+                session, support_target.id, episode.id, claim.evidence_excerpt,
+                is_verified, char_start, char_end, ep_hash,
             )
-            session.add(evidence)
             updated_count += 1
-            if target_mem not in affected_memories:
-                affected_memories.append(target_mem)
+            if support_target not in affected_memories:
+                affected_memories.append(support_target)
             continue
 
-        # If identical claim text was already active even if LLM said ADD, treat as support
-        if target_mem and target_mem.claim.strip().lower() == claim.claim.strip().lower():
-            target_mem.confidence = min(1.0, round(max(target_mem.confidence, effective_confidence) + 0.03, 2))
-            target_mem.updated_at = now
-            evidence = Evidence(
-                memory_id=target_mem.id,
-                episode_id=episode.id,
-                excerpt=claim.evidence_excerpt,
-                is_verified=is_verified,
-                char_start=char_start,
-                char_end=char_end,
-                content_hash=ep_hash,
-            )
-            session.add(evidence)
-            updated_count += 1
-            if target_mem not in affected_memories:
-                affected_memories.append(target_mem)
-            continue
-
-        # 5. Determine whether to supersede an existing memory
+        # 5. Determine Target to Supersede vs. Ambiguous Multi-Valued Conflict
         memory_to_supersede: Optional[Memory] = None
+        quarantine_for_review = False
+        is_single_topic = bool(
+            topic and (
+                topic.cardinality == TopicCardinality.SINGLE
+                or topic.update_policy == UpdatePolicy.REPLACE
+            )
+        )
 
         if claim.operation in (ClaimOperation.SUPERSEDE, ClaimOperation.UPDATE, ClaimOperation.CONTRADICT):
-            if target_mem:
-                memory_to_supersede = target_mem
-            elif topic:
-                # Fallback: if topic is single-valued, find active memory for this topic
+            if explicit_target:
+                memory_to_supersede = explicit_target
+            elif is_single_topic and topic:
+                # Safe automatic target resolution ONLY for single-valued topics
                 for m in active_memories:
                     if m.topic_id == topic.id and m.status in (MemoryStatus.ACTIVE, MemoryStatus.CONFIRMED):
                         memory_to_supersede = m
                         break
-        elif topic and (
-            topic.cardinality == TopicCardinality.SINGLE
-            or topic.update_policy == UpdatePolicy.REPLACE
-        ):
-            # Single-cardinality topic enforces a single active value per entity
+            else:
+                # Multi-valued or untopiced conflict without an explicit valid target_memory_id:
+                # Never overwrite an arbitrary preference; quarantine for review.
+                quarantine_for_review = True
+        elif is_single_topic and topic:
+            # Single-cardinality topic enforces one active value per entity
             for m in active_memories:
                 if m.topic_id == topic.id and m.status in (MemoryStatus.ACTIVE, MemoryStatus.CONFIRMED):
                     memory_to_supersede = m
                     break
 
-        # 6. Apply Update Policy & Persist Memory
-        if (
-            memory_to_supersede
-            and effective_confidence >= settings.conflict_threshold
-            and (not topic or topic.update_policy != UpdatePolicy.APPEND)
-        ):
-            # If topic policy is REVIEW and existing memory was human-CONFIRMED, keep existing and add new as active
-            if topic and topic.update_policy == UpdatePolicy.REVIEW and memory_to_supersede.status == MemoryStatus.CONFIRMED:
+        # 6. Apply Update Policy & Event-Time Temporal Reconciliation
+        if quarantine_for_review:
+            new_memory = Memory(
+                workspace_id=entity.workspace_id,
+                entity_id=entity.id,
+                topic_id=topic.id if topic else None,
+                claim=claim.claim,
+                value=norm_val,
+                structured_value=structured_val,
+                claim_type=claim.claim_type,
+                confidence=effective_confidence,
+                status=MemoryStatus.PENDING_REVIEW,
+                valid_from=event_time,
+            )
+            session.add(new_memory)
+            await session.flush()
+            new_count += 1
+        elif memory_to_supersede:
+            # Policy check: REVIEW policy or below-threshold confidence routes candidate to PENDING_REVIEW
+            if (
+                (topic and topic.update_policy == UpdatePolicy.REVIEW)
+                or effective_confidence < settings.conflict_threshold
+            ):
                 new_memory = Memory(
                     workspace_id=entity.workspace_id,
                     entity_id=entity.id,
@@ -433,41 +549,69 @@ async def process_extracted_claims(
                     structured_value=structured_val,
                     claim_type=claim.claim_type,
                     confidence=effective_confidence,
-                    status=MemoryStatus.ACTIVE,
-                    valid_from=episode.occurred_at or now,
+                    status=MemoryStatus.PENDING_REVIEW,
+                    valid_from=event_time,
                 )
                 session.add(new_memory)
                 await session.flush()
                 new_count += 1
             else:
-                # Supersede old memory
-                memory_to_supersede.status = MemoryStatus.SUPERSEDED
-                memory_to_supersede.valid_to = episode.occurred_at or now
-                memory_to_supersede.updated_at = now
+                existing_from = _ensure_utc(
+                    memory_to_supersede.valid_from or memory_to_supersede.created_at
+                ) or now
 
-                new_memory = Memory(
-                    workspace_id=entity.workspace_id,
-                    entity_id=entity.id,
-                    topic_id=topic.id if topic else None,
-                    claim=claim.claim,
-                    value=norm_val,
-                    structured_value=structured_val,
-                    claim_type=claim.claim_type,
-                    confidence=effective_confidence,
-                    status=MemoryStatus.ACTIVE,
-                    valid_from=episode.occurred_at or now,
-                )
-                session.add(new_memory)
-                await session.flush()
+                if event_time < existing_from:
+                    # Out-of-order / late-arriving historical event:
+                    # Preserve the newer active memory and record this older claim as historical SUPERSEDED
+                    new_memory = Memory(
+                        workspace_id=entity.workspace_id,
+                        entity_id=entity.id,
+                        topic_id=topic.id if topic else None,
+                        claim=claim.claim,
+                        value=norm_val,
+                        structured_value=structured_val,
+                        claim_type=claim.claim_type,
+                        confidence=effective_confidence,
+                        status=MemoryStatus.SUPERSEDED,
+                        superseded_by_id=memory_to_supersede.id,
+                        valid_from=event_time,
+                        valid_to=existing_from,
+                    )
+                    session.add(new_memory)
+                    await session.flush()
+                    new_count += 1
+                else:
+                    # Chronological update: supersede the older active memory
+                    old_id = memory_to_supersede.id
+                    memory_to_supersede.status = MemoryStatus.SUPERSEDED
+                    memory_to_supersede.valid_to = event_time
+                    memory_to_supersede.updated_at = now
 
-                memory_to_supersede.superseded_by_id = new_memory.id
-                active_memories = [m for m in active_memories if m.id != memory_to_supersede.id]
-                active_memories.append(new_memory)
-                if new_memory.id is not None:
-                    active_by_id[new_memory.id] = new_memory
-                updated_count += 1
+                    new_memory = Memory(
+                        workspace_id=entity.workspace_id,
+                        entity_id=entity.id,
+                        topic_id=topic.id if topic else None,
+                        claim=claim.claim,
+                        value=norm_val,
+                        structured_value=structured_val,
+                        claim_type=claim.claim_type,
+                        confidence=effective_confidence,
+                        status=MemoryStatus.ACTIVE,
+                        valid_from=event_time,
+                    )
+                    session.add(new_memory)
+                    await session.flush()
+
+                    memory_to_supersede.superseded_by_id = new_memory.id
+                    active_memories = [m for m in active_memories if m.id != old_id]
+                    if old_id is not None:
+                        active_by_id.pop(old_id, None)
+                    active_memories.append(new_memory)
+                    if new_memory.id is not None:
+                        active_by_id[new_memory.id] = new_memory
+                    updated_count += 1
         else:
-            # Coexisting / New Memory
+            # Coexisting / New Active Memory
             new_memory = Memory(
                 workspace_id=entity.workspace_id,
                 entity_id=entity.id,
@@ -478,7 +622,7 @@ async def process_extracted_claims(
                 claim_type=claim.claim_type,
                 confidence=effective_confidence,
                 status=MemoryStatus.ACTIVE,
-                valid_from=episode.occurred_at or now,
+                valid_from=event_time,
             )
             session.add(new_memory)
             await session.flush()
@@ -488,16 +632,10 @@ async def process_extracted_claims(
             new_count += 1
 
         # Create verified evidence link
-        evidence = Evidence(
-            memory_id=new_memory.id,
-            episode_id=episode.id,
-            excerpt=claim.evidence_excerpt,
-            is_verified=is_verified,
-            char_start=char_start,
-            char_end=char_end,
-            content_hash=ep_hash,
+        await _attach_evidence_if_missing(
+            session, new_memory.id, episode.id, claim.evidence_excerpt,
+            is_verified, char_start, char_end, ep_hash,
         )
-        session.add(evidence)
         affected_memories.append(new_memory)
 
     entity.updated_at = now

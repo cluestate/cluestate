@@ -4,13 +4,28 @@ ClueState provides both synchronous (`ClueState`) and asynchronous (`AsyncClueSt
 
 ## Installation
 
-If you only need the API client in your application or microservice:
+### Option A: Lightweight Client (`cluestate-sdk`)
+
+Depends only on `httpx` and `pydantic` (ideal for thin microservices, AI workers, or serverless functions):
 
 ```bash
-pip install ./sdks/python
+pip install "git+https://github.com/cluestate/cluestate.git#subdirectory=sdks/python"
+# Or from a local checkout: pip install ./sdks/python
 ```
 
-If you have the full ClueState package installed, the SDK is also exported directly from `cluestate`:
+Import from `cluestate_sdk`:
+
+```python
+from cluestate_sdk import ClueState, AsyncClueState, ClueStateError
+```
+
+### Option B: Full Platform Package (`cluestate`)
+
+If you already have the full ClueState engine package installed, the client is exported directly from `cluestate`:
+
+```bash
+pip install "git+https://github.com/cluestate/cluestate.git"
+```
 
 ```python
 from cluestate import ClueState, AsyncClueState, ClueStateError
@@ -23,11 +38,11 @@ from cluestate import ClueState, AsyncClueState, ClueStateError
 The client reads `CLUESTATE_API_KEY` and `CLUESTATE_API_URL` from environment variables by default, or accepts them explicitly:
 
 ```python
-from cluestate import ClueState
+from cluestate_sdk import ClueState
 
 cs = ClueState(
     api_key="cs_live_YOUR_WORKSPACE_KEY",
-    base_url="https://app.cluestate.com",  # or http://localhost:8000 for self-hosted
+    base_url="http://localhost:8000",  # or your deployed ClueState URL
     timeout=60.0,
 )
 ```

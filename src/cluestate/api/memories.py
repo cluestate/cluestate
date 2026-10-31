@@ -24,6 +24,7 @@ async def list_entity_memories(
     entity_id: int,
     status: MemoryStatus | None = Query(None, description="Filter by status"),
     topic_id: int | None = Query(None, description="Filter by topic"),
+    include_all: bool = Query(False, description="Include pending_review, superseded, and rejected memories"),
     workspace: Workspace = Depends(get_current_workspace),
     session: AsyncSession = Depends(get_session),
 ):
@@ -32,10 +33,10 @@ async def list_entity_memories(
     if not entity or entity.workspace_id != workspace.id:
         raise HTTPException(status_code=404, detail="Entity not found")
 
-    query = select(Memory).where(Memory.entity_id == entity_id)
+    query = select(Memory).where(Memory.entity_id == entity_id, Memory.workspace_id == workspace.id)
     if status:
         query = query.where(Memory.status == status)
-    else:
+    elif not include_all:
         query = query.where(Memory.status.in_([MemoryStatus.ACTIVE, MemoryStatus.CONFIRMED]))
     if topic_id:
         query = query.where(Memory.topic_id == topic_id)

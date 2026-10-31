@@ -1,6 +1,7 @@
 """Tests for Model Context Protocol (MCP) server."""
 
 import pytest
+
 from cluestate.mcp_server import create_mcp_server
 
 

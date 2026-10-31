@@ -90,8 +90,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const baseUrl = `${serverUrl}/api`;
 
   const codeSnippets = {
-    python: `# ClueState Python SDK (Sync & Async)
-from cluestate import ClueState
+    python: `# Lightweight client (pip install cluestate-sdk):
+from cluestate_sdk import ClueState
+# Or full engine package (pip install cluestate): from cluestate import ClueState
 
 cs = ClueState(
     api_key="cs_live_YOUR_API_KEY",

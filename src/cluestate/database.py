@@ -1,6 +1,11 @@
 """Async database engine and session management."""
 
+import os
+
+from alembic import command
+from alembic.config import Config
 from sqlalchemy import select
+from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import SQLModel
@@ -63,13 +68,26 @@ async def ensure_default_workspace(session: AsyncSession):
     return workspace
 
 
+def _upgrade_with_connection(connection: Connection) -> None:
+    """Execute Alembic migrations up to 'head' using the active synchronous connection."""
+    migrations_dir = os.path.join(os.path.dirname(__file__), "migrations")
+    if os.path.isdir(migrations_dir):
+        cfg = Config()
+        cfg.set_main_option("script_location", migrations_dir)
+        cfg.attributes["connection"] = connection
+        cfg.attributes["configure_logger"] = False
+        command.upgrade(cfg, "head")
+    else:
+        SQLModel.metadata.create_all(bind=connection, checkfirst=True)
+
+
 async def init_db():
-    """Create all tables and ensure the default workspace exists."""
+    """Run Alembic database migrations and ensure the default workspace exists."""
     from . import models  # noqa: F401 — ensure models are registered
 
     engine = get_engine()
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await conn.run_sync(_upgrade_with_connection)
 
     async with get_session_factory()() as session:
         await ensure_default_workspace(session)

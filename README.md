@@ -1,27 +1,28 @@
 # ClueState
 
-**Customer Intelligence Infrastructure**
+**Evidence-backed customer and entity intelligence infrastructure.**
 
-Understand every customer beyond the data. Turn fragmented customer interactions, transactions, and conversations into a continuously updated, evidence-backed customer state.
+Understand every customer beyond the data. Turn fragmented customer interactions, transactions, and conversations into a continuously updated, evidence-backed entity state.
 
 Give your customer service teams, personalization engines, and AI agents the structured context they need.
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![Python SDK](https://img.shields.io/badge/python%20sdk-available-green.svg)](docs/python-sdk.md)
-[![TypeScript SDK](https://img.shields.io/badge/typescript%20sdk-zero--dependency-3178C6.svg)](docs/typescript-sdk.md)
+[![Status](https://img.shields.io/badge/status-v0.1.0--alpha-amber.svg)](CHANGELOG.md)
+[![Python SDK](https://img.shields.io/badge/python-3.11+-green.svg)](docs/python-sdk.md)
+[![TypeScript SDK](https://img.shields.io/badge/typescript-zero--dependency-3178C6.svg)](docs/typescript-sdk.md)
 [![Docker](https://img.shields.io/badge/docker-ready-2496ED.svg)](docker-compose.yml)
 
 ---
 
 ## Overview
 
-Organizations define what they want to know about their customers using typed **State Schemas** (`Topic`). ClueState ingests structured and unstructured interactions (`Episode`), extracts atomic claims (`Memory`), verifies source quotations (`Evidence`), and maintains the resulting entity state over time.
+Organizations define what they want to know about their customers or entities using typed **State Schemas** (`Topic`). ClueState ingests structured and unstructured interactions (`Episode`), extracts atomic claims (`Memory`), verifies source quotations (`Evidence`), and maintains the resulting entity state over time according to explicit rules.
 
-- **Structured Customer State:** Define typed schemas (`text`, `number`, `boolean`, `enum`, `list`) with explicit cardinality (`single` vs. `multiple`) and update policies (`replace`, `append`, `review`).
+- **Enforced State Schemas:** Define typed contracts (`text`, `number`, `boolean`, `enum`, `list`) with explicit cardinality (`single` vs. `multiple`) and update policies (`replace`, `append`, `review`). Values that violate a topic's type or enum contract are quarantined to `pending_review` rather than entering active state.
 - **Evidence & Provenance:** Every claim links to its source episode with programmatically verified character offsets (`char_start`, `char_end`), source record IDs, interaction timestamps (`occurred_at`), and SHA-256 content hashes.
-- **Explicit State Transitions:** Rather than blindly overwriting by category, ClueState distinguishes between coexisting attributes (`add`), supporting evidence (`support`), and superseding outdated facts (`supersede`).
+- **Event-Time State Resolution:** Distinguishes between coexisting attributes (`add`), corroborating evidence (`support`), and superseding facts (`supersede`), while respecting chronological `occurred_at` timestamps so late-arriving historical imports do not overwrite newer state.
 - **Official Typed SDKs:** Ergonomic, type-safe clients for **Python** (`ClueState` & `AsyncClueState`) and **TypeScript / JavaScript** (`@cluestate/sdk`, zero dependencies, universal `fetch`).
-- **Multi-Tenant Platform & UI:** Includes workspace isolation, user authentication, scoped API keys (`cs_live_...`), and a built-in dark-mode management UI (`app.cluestate.com` or self-hosted).
+- **Multi-Tenant Platform & UI:** Includes workspace isolation, user authentication, privilege-separated API keys (`cs_live_...`), Alembic database migrations, and a built-in dark-mode management UI.
 
 ---
 
@@ -182,23 +183,22 @@ Returns both the structured `memories` array (for application logic, CRMs, and p
 
 ## Official SDKs (Python & TypeScript)
 
-ClueState provides official typed SDKs for integrating continuous customer intelligence into your backend services, AI agent loops, and web applications.
+ClueState includes official typed SDKs in [`sdks/python`](sdks/python) and [`sdks/typescript`](sdks/typescript) for integrating continuous customer and entity intelligence into backend services, AI agent loops, and web applications.
 
-### Python SDK ([Documentation](docs/python-sdk.md) · [Package](sdks/python))
+### Python SDK ([Documentation](docs/python-sdk.md) · [`sdks/python`](sdks/python))
 
-Install the lightweight client (no server or database dependencies):
+**Option A — Lightweight Client (`cluestate-sdk`, depends only on `httpx` and `pydantic`):**
 
 ```bash
-pip install cluestate-sdk
-# or install full engine: pip install cluestate
+pip install "git+https://github.com/cluestate/cluestate.git#subdirectory=sdks/python"
 ```
 
 ```python
-from cluestate import ClueState
+from cluestate_sdk import ClueState
 
 client = ClueState(
     api_key="cs_live_YOUR_API_KEY",
-    base_url="https://app.cluestate.com",  # or http://localhost:8000
+    base_url="http://localhost:8000",  # or your deployed ClueState instance URL
 )
 
 # 1. Ingest a customer interaction
@@ -211,36 +211,46 @@ response = client.ingest(
 )
 
 # 2. Retrieve verified customer state
-intel = client.get_intel(external_id="cust_402")
+intel = client.get_intel("cust_402")
 print(intel.formatted_prompt)
 ```
 
-Also includes [`AsyncClueState`](docs/python-sdk.md#asynchronous-usage-asynccluestate) for `asyncio` services. See the [Python SDK Reference](docs/python-sdk.md) and [`examples/python_quickstart.py`](examples/python_quickstart.py).
+**Option B — Full Platform Distribution (`cluestate`):**
 
-### TypeScript / JavaScript SDK ([Documentation](docs/typescript-sdk.md) · [Package](sdks/typescript))
+```bash
+pip install "git+https://github.com/cluestate/cluestate.git"
+```
+
+```python
+from cluestate import ClueState, AsyncClueState
+```
+
+See the [Python SDK Reference](docs/python-sdk.md) and [`examples/python_quickstart.py`](examples/python_quickstart.py).
+
+### TypeScript / JavaScript SDK ([Documentation](docs/typescript-sdk.md) · [`sdks/typescript`](sdks/typescript))
 
 Zero runtime dependencies. Runs natively in Node.js 18+, Bun, Deno, Cloudflare Workers, and Vercel Edge:
 
 ```bash
-npm install @cluestate/sdk
-# or: pnpm add @cluestate/sdk / bun add @cluestate/sdk
+# Install from a local checkout or workspace:
+npm install ./sdks/typescript
 ```
 
 ```typescript
 import { ClueState } from "@cluestate/sdk";
 
 const cluestate = new ClueState({
-    apiKey: process.env.CLUESTATE_API_KEY!,
-    baseUrl: "https://app.cluestate.com", // or http://localhost:8000
+  apiKey: process.env.CLUESTATE_API_KEY!,
+  baseUrl: "http://localhost:8000", // or your deployed ClueState instance URL
 });
 
 // 1. Ingest an interaction
 await cluestate.ingest({
-    externalId: "cust_402",
-    entityName: "Marcus Vance",
-    content: "We migrated our primary database to PostgreSQL and set our Q4 budget to $25,000.",
-    sourceType: "support_ticket",
-    idempotencyKey: "evt_ticket_8841",
+  externalId: "cust_402",
+  entityName: "Marcus Vance",
+  content: "We migrated our primary database to PostgreSQL and set our Q4 budget to $25,000.",
+  sourceType: "support_ticket",
+  idempotencyKey: "evt_ticket_8841",
 });
 
 // 2. Retrieve verified customer state
@@ -252,26 +262,21 @@ See the [TypeScript SDK Reference](docs/typescript-sdk.md) and [`examples/typesc
 
 ---
 
-## Installation & Deployment
+## Installation & Self-Hosting
 
-### Quickest Start: Use the SDK with ClueState Cloud
-If you use [app.cluestate.com](https://app.cluestate.com), simply install the SDK (`pip install cluestate-sdk` or `npm install @cluestate/sdk`), get your API key from the web console, and start ingesting interactions.
-
-### Self-Hosting the ClueState Platform
-
-#### Option 1: Docker Compose (PostgreSQL + API + Platform UI)
+### Option 1: Docker Compose (PostgreSQL + API + Platform UI)
 
 ```bash
 git clone https://github.com/cluestate/cluestate.git
 cd cluestate
 
 cp .env.example .env
-# Edit .env to set OPENAI_API_KEY, POSTGRES_PASSWORD, and SECRET_KEY
+# Edit .env to set OPENAI_API_KEY, POSTGRES_PASSWORD, and SECRET_KEY (required)
 
 docker compose up -d --build
 ```
 
-Open `http://localhost:8000` to create your workspace account and generate a `cs_live_...` API key.
+Open `http://localhost:8000` to create your workspace account and generate a `cs_live_...` API key. Database migrations run automatically via Alembic on startup (`cluestate migrate`).
 
 ### Option 2: Local Python Installation (SQLite or PostgreSQL)
 
@@ -308,9 +313,9 @@ All `/api/*` endpoints (except `/api/health`, `/api/auth/signup`, and `/api/auth
 Authorization: Bearer cs_live_YOUR_WORKSPACE_API_KEY
 ```
 
-1. **Workspace Accounts & JWTs:** Sign up in the web UI (`/api/auth/signup`) to create an isolated workspace. Interactive browser sessions authenticate with HMAC-SHA256 signed JWTs.
-2. **Scoped API Keys (`cs_live_...`):** Generate and revoke per-workspace API keys in the **API & Settings** tab. Keys are stored as SHA-256 hashes in the database.
-3. **Static Master Key (Optional):** For single-tenant CLI automation, you can set `API_KEY` in `.env` to authenticate against the default workspace.
+1. **Workspace Accounts & JWTs:** Sign up in the web UI (`/api/auth/signup`) to create an isolated workspace. Interactive browser sessions authenticate with HMAC-SHA256 signed JWTs, which are required for user and API-key administration (`/api/auth/api-keys`).
+2. **Privilege-Separated API Keys (`cs_live_...`):** Generate and revoke per-workspace API keys in the **API & Settings** tab. Keys are stored as SHA-256 hashes, scoped to data-plane operations within their workspace, and explicitly blocked (`403 Forbidden`) from minting or revoking keys.
+3. **Static Master Key (Optional):** For single-tenant CLI automation, you can set `API_KEY` in `.env` to authenticate data-plane requests against the default workspace.
 
 ---
 

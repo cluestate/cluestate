@@ -31,9 +31,11 @@ env/
 .DS_Store
 Thumbs.db
 
-# Node (admin UI)
+# Node (admin UI & TypeScript SDK)
+node_modules/
 admin/node_modules/
 admin/dist/
+sdks/typescript/dist/
 
 # Distribution
 *.whl

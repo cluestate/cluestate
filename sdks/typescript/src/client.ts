@@ -36,8 +36,9 @@ function normalizeBaseUrl(rawUrl: string): string {
 
 function getEnvVar(name: string): string | undefined {
   try {
-    if (typeof process !== 'undefined' && process.env) {
-      return process.env[name];
+    const proc = (globalThis as unknown as { process?: { env?: Record<string, string | undefined> } }).process;
+    if (proc?.env) {
+      return proc.env[name];
     }
   } catch {
     // Ignore in browser/edge environments without process

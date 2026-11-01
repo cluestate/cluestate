@@ -19,7 +19,7 @@ from .config import get_settings
 from .database import ensure_default_workspace, get_session
 from .models import ApiKey, User, Workspace
 
-PBKDF2_ITERATIONS = 260_000
+PBKDF2_ITERATIONS = 600_000
 
 
 # ──────────────────────────────────────────────

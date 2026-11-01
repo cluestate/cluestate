@@ -375,11 +375,17 @@ async def test_support_does_not_arbitrarily_inflate_confidence(db_session: Async
 
 
 @pytest.mark.asyncio
-async def test_multi_tenant_isolation_and_api_key_privilege_separation(db_session: AsyncSession):
+async def test_multi_tenant_isolation_and_api_key_privilege_separation(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
     """
     1. Two workspaces with identical external_id ('shared_cust_1') cannot read or list each other's state.
     2. Scoped API keys (cs_live_...) receive 403 Forbidden on /api/auth/api-keys management endpoints.
     """
+    from cluestate.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "allow_signup", True)
     app = create_app()
 
     async def override_get_session():
@@ -529,3 +535,119 @@ async def test_python_sdk_client(db_session: AsyncSession):
         with pytest.raises(ClueStateError) as exc_info:
             await sdk.get_intel("non_existent_customer")
         assert exc_info.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_spa_path_traversal_regression():
+    """
+    Regression test for SPA catch-all path traversal:
+    Requesting /%2e%2e/%2e%2e/etc/hostname or /%2e%2e/%2e%2e/pyproject.toml
+    must never read files outside static_root and must return the SPA index.html.
+    """
+    app = create_app()
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as ac:
+        for payload in (
+            "/%2e%2e/%2e%2e/etc/hostname",
+            "/%2e%2e/%2e%2e/%2e%2e/pyproject.toml",
+            "/..%2f..%2fpyproject.toml",
+        ):
+            res = await ac.get(payload)
+            assert res.status_code == 200
+            assert "<!doctype html>" in res.text.lower()
+            assert "[build-system]" not in res.text
+
+
+@pytest.mark.asyncio
+async def test_health_endpoint_does_not_leak_model():
+    """Public /api/health must not disclose llm_model or database backend."""
+    app = create_app()
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as ac:
+        res = await ac.get("/api/health")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["status"] == "ok"
+        assert "llm_model" not in data
+        assert "database" not in data
+
+
+@pytest.mark.asyncio
+async def test_sensitive_topic_defaults_to_review_and_complete_episode_forget(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+):
+    """
+    1. Sensitive topics (e.g. 'food_allergies') default to UpdatePolicy.REVIEW when not specified.
+    2. Deleting a memory cleans up its orphaned source Episode so raw text does not linger.
+    3. DELETE /api/episodes/{id} removes the episode and any memories backed solely by it.
+    """
+    # 1. Sensitive topic default policy
+    topic_res = await client.post(
+        "/api/topics",
+        json={
+            "name": "food_allergies",
+            "description": "Dietary allergies",
+            "data_type": "list",
+            "cardinality": "multiple",
+        },
+    )
+    assert topic_res.status_code == 201
+    assert topic_res.json()["update_policy"] == "review"
+
+    # 2. Memory delete cleans up orphaned Episode
+    ent = Entity(workspace_id=1, external_id="forget_test", name="Forget User")
+    db_session.add(ent)
+    await db_session.flush()
+
+    ep1 = Episode(workspace_id=1, entity_id=ent.id, content="Sensitive text to forget completely.")
+    db_session.add(ep1)
+    await db_session.flush()
+
+    mem1 = Memory(
+        workspace_id=1,
+        entity_id=ent.id,
+        claim="Has secret claim",
+        value="secret",
+        confidence=0.9,
+    )
+    db_session.add(mem1)
+    await db_session.flush()
+
+    ev1 = Evidence(memory_id=mem1.id, episode_id=ep1.id, excerpt="Sensitive text", is_verified=True)
+    db_session.add(ev1)
+    await db_session.commit()
+
+    del_res = await client.delete(f"/api/memories/{mem1.id}")
+    assert del_res.status_code == 204
+
+    assert await db_session.get(Episode, ep1.id) is None
+
+    # 3. Direct Episode delete cleans up linked Memory
+    ep2 = Episode(workspace_id=1, entity_id=ent.id, content="Second episode to delete directly.")
+    db_session.add(ep2)
+    await db_session.flush()
+
+    mem2 = Memory(
+        workspace_id=1,
+        entity_id=ent.id,
+        claim="Second claim",
+        value="second",
+        confidence=0.9,
+    )
+    db_session.add(mem2)
+    await db_session.flush()
+
+    ev2 = Evidence(memory_id=mem2.id, episode_id=ep2.id, excerpt="Second episode", is_verified=True)
+    db_session.add(ev2)
+    await db_session.commit()
+
+    del_ep_res = await client.delete(f"/api/episodes/{ep2.id}")
+    assert del_ep_res.status_code == 204
+    assert await db_session.get(Episode, ep2.id) is None
+    assert await db_session.get(Memory, mem2.id) is None
+

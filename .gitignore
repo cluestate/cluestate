@@ -21,6 +21,7 @@ env/
 
 # Environment
 .env
+.cluestate_secret
 
 # Database
 *.db

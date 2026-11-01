@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.1.1] - 2026-10-31
+
+### Security
+- **Fixed SPA Catch-All Path Traversal:** Enforced `Path(static_dir).resolve()` and `target.is_relative_to(static_root)` in `src/cluestate/main.py` so URL-encoded or `--path-as-is` relative paths cannot read files outside the static directory.
+- **Public Signup Control (`ALLOW_SIGNUP`):** Restricted `/api/auth/signup` to initial first-account setup by default (`ALLOW_SIGNUP=false`).
+- **Default Bind Host & Persistent Secret Key:** Changed default `HOST` outside Docker to `127.0.0.1`, persisted auto-generated `SECRET_KEY` to `.cluestate_secret` (`0600`) across restarts, increased PBKDF2 password hashing to `600,000` iterations, and removed model/database disclosure from unauthenticated `/api/health`.
+- **Sensitive Topic Default Policy:** Topics matching sensitive categories (`allergy`, `health`, `medical`, `budget`, `security`, `compliance`) now default to the `review` update policy unless explicitly overridden.
+- **Complete Forget & Episode Deletion:** Deleting a memory (`DELETE /api/memories/{id}` or `cluestate_forget`) now removes any source `Episode` orphaned by the deletion, and added `DELETE /api/episodes/{id}`.
+
 ## [0.1.0] - 2026-10-31
 
 ### Added

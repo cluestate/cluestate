@@ -4,9 +4,10 @@ import re
 import secrets
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..config import get_settings
 from ..database import get_session
 from ..models import ApiKey, User, Workspace
 from ..schemas import (
@@ -38,6 +39,14 @@ def _slugify(text: str) -> str:
 @router.post("/signup", response_model=AuthResponse, status_code=201)
 async def signup(body: SignupRequest, session: AsyncSession = Depends(get_session)):
     """Create a new user account, workspace, and default API key."""
+    settings = get_settings()
+    user_count = (await session.execute(select(func.count()).select_from(User))).scalar() or 0
+    if user_count > 0 and not settings.allow_signup:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Public signup is disabled after initial account setup. Set ALLOW_SIGNUP=true to allow additional signups.",
+        )
+
     email_norm = body.email.strip().lower()
     if "@" not in email_norm:
         raise HTTPException(status_code=400, detail="Valid email address is required")

@@ -108,10 +108,16 @@ async def delete_memory(
     workspace: Workspace = Depends(get_current_workspace),
     session: AsyncSession = Depends(get_session),
 ):
-    """Transactionally delete a memory and all linked evidence records."""
+    """Transactionally delete a memory, its linked evidence, and any episodes orphaned by the deletion."""
     memory = await session.get(Memory, memory_id)
     if not memory or memory.workspace_id != workspace.id:
         raise HTTPException(status_code=404, detail="Memory not found")
+
+    # Find episodes linked to this memory before deleting its evidence
+    ep_res = await session.execute(
+        select(Evidence.episode_id).where(Evidence.memory_id == memory_id)
+    )
+    linked_episode_ids = {row[0] for row in ep_res.all()}
 
     # Clear any foreign key reference from superseded memories
     await session.execute(
@@ -121,8 +127,66 @@ async def delete_memory(
     )
     # Delete linked evidence rows
     await session.execute(delete(Evidence).where(Evidence.memory_id == memory_id))
-
     await session.delete(memory)
+    await session.flush()
+
+    # Clean up any episodes that no longer back any remaining memory evidence
+    for ep_id in linked_episode_ids:
+        remaining = (
+            await session.execute(
+                select(func.count()).select_from(Evidence).where(Evidence.episode_id == ep_id)
+            )
+        ).scalar() or 0
+        if remaining == 0:
+            await session.execute(
+                delete(Episode).where(
+                    Episode.id == ep_id,
+                    Episode.workspace_id == workspace.id,
+                )
+            )
+
+    await session.commit()
+
+
+@router.delete("/episodes/{episode_id}", status_code=204, tags=["Memories"])
+async def delete_episode(
+    episode_id: int,
+    workspace: Workspace = Depends(get_current_workspace),
+    session: AsyncSession = Depends(get_session),
+):
+    """Transactionally delete a source episode, its evidence, and any memories backed solely by this episode."""
+    episode = await session.get(Episode, episode_id)
+    if not episode or episode.workspace_id != workspace.id:
+        raise HTTPException(status_code=404, detail="Episode not found")
+
+    mem_res = await session.execute(
+        select(Evidence.memory_id).where(Evidence.episode_id == episode_id)
+    )
+    linked_memory_ids = {row[0] for row in mem_res.all()}
+
+    await session.execute(delete(Evidence).where(Evidence.episode_id == episode_id))
+    await session.flush()
+
+    for mem_id in linked_memory_ids:
+        remaining = (
+            await session.execute(
+                select(func.count()).select_from(Evidence).where(Evidence.memory_id == mem_id)
+            )
+        ).scalar() or 0
+        if remaining == 0:
+            await session.execute(
+                update(Memory)
+                .where(Memory.superseded_by_id == mem_id)
+                .values(superseded_by_id=None)
+            )
+            await session.execute(
+                delete(Memory).where(
+                    Memory.id == mem_id,
+                    Memory.workspace_id == workspace.id,
+                )
+            )
+
+    await session.delete(episode)
     await session.commit()
 
 

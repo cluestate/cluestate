@@ -5,11 +5,28 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_session
-from ..models import Topic, Workspace
+from ..models import Topic, UpdatePolicy, Workspace
 from ..schemas import TopicCreate, TopicRead, TopicUpdate
 from ..security import get_current_workspace
 
 router = APIRouter(prefix="/topics", tags=["Topics"])
+
+SENSITIVE_TOPIC_KEYWORDS = (
+    "allergy",
+    "allergies",
+    "medical",
+    "health",
+    "dietary_restriction",
+    "budget",
+    "salary",
+    "security",
+    "compliance",
+)
+
+
+def _is_sensitive_topic(name: str) -> bool:
+    slug = name.strip().lower()
+    return any(kw in slug for kw in SENSITIVE_TOPIC_KEYWORDS)
 
 
 @router.post("", response_model=TopicRead, status_code=201)
@@ -31,13 +48,17 @@ async def create_topic(
             detail=f"Topic '{body.name}' already exists in this workspace",
         )
 
+    effective_policy = body.update_policy
+    if "update_policy" not in body.model_fields_set and _is_sensitive_topic(body.name):
+        effective_policy = UpdatePolicy.REVIEW
+
     topic = Topic(
         workspace_id=workspace.id,
         name=body.name,
         description=body.description,
         data_type=body.data_type,
         cardinality=body.cardinality,
-        update_policy=body.update_policy,
+        update_policy=effective_policy,
         temporal=body.temporal,
         enum_values=body.enum_values,
         schema_version=1,

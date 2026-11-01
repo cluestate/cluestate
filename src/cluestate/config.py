@@ -1,9 +1,31 @@
 """Configuration via environment variables with sensible defaults."""
 
+import os
 import secrets
 from functools import lru_cache
+from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings
+
+
+def _load_or_create_secret_key() -> str:
+    """Persist auto-generated secret key locally so server restarts do not invalidate active sessions."""
+    secret_file = Path(".cluestate_secret")
+    try:
+        if secret_file.is_file():
+            existing = secret_file.read_text(encoding="utf-8").strip()
+            if len(existing) >= 32:
+                return existing
+        generated = secrets.token_urlsafe(32)
+        secret_file.write_text(generated, encoding="utf-8")
+        try:
+            os.chmod(secret_file, 0o600)
+        except OSError:
+            pass
+        return generated
+    except OSError:
+        return secrets.token_urlsafe(32)
 
 
 class Settings(BaseSettings):
@@ -21,16 +43,17 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///./cluestate.db"
 
     # ─── Server & Platform ───
-    host: str = "0.0.0.0"
+    host: str = "127.0.0.1"
     port: int = 8000
     log_level: str = "info"
     app_url: str = "https://app.cluestate.com"
     cors_origins: str = "https://app.cluestate.com,https://cluestate.com,http://localhost:5173,http://localhost:8000"
 
     # ─── Security & Authentication ───
-    secret_key: str = secrets.token_urlsafe(32)
+    secret_key: str = Field(default_factory=_load_or_create_secret_key)
     access_token_expire_minutes: int = 60 * 24 * 7  # 7 days
     api_key: str = ""  # Optional static master API key for single-tenant / CLI automation
+    allow_signup: bool = False  # Off by default after initial admin account setup
 
     # ─── Extraction Tuning ───
     max_retries: int = 2

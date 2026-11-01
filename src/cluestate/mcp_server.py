@@ -439,10 +439,10 @@ def create_mcp_server() -> "MCPServer":
                     return f"Error deleting memory: {res.text}"
                 return f"Memory #{memory_id} deleted."
 
-        from sqlalchemy import delete, update
+        from sqlalchemy import delete, func, select, update
 
         from .database import get_session_factory, init_db
-        from .models import Evidence, Memory
+        from .models import Episode, Evidence, Memory
 
         await init_db()
 
@@ -452,11 +452,32 @@ def create_mcp_server() -> "MCPServer":
                 return f"Memory with ID {memory_id} not found."
 
             claim_text = mem.claim
+            ep_res = await session.execute(
+                select(Evidence.episode_id).where(Evidence.memory_id == memory_id)
+            )
+            linked_episode_ids = {row[0] for row in ep_res.all()}
+
             await session.execute(
                 update(Memory).where(Memory.superseded_by_id == memory_id).values(superseded_by_id=None)
             )
             await session.execute(delete(Evidence).where(Evidence.memory_id == memory_id))
             await session.delete(mem)
+            await session.flush()
+
+            for ep_id in linked_episode_ids:
+                remaining = (
+                    await session.execute(
+                        select(func.count()).select_from(Evidence).where(Evidence.episode_id == ep_id)
+                    )
+                ).scalar() or 0
+                if remaining == 0:
+                    await session.execute(
+                        delete(Episode).where(
+                            Episode.id == ep_id,
+                            Episode.workspace_id == workspace_id,
+                        )
+                    )
+
             await session.commit()
             return f"Memory #{memory_id} ('{claim_text}') was deleted."
 

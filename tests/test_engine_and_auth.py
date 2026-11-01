@@ -46,7 +46,16 @@ async def test_unauthenticated_request_rejected(db_session: AsyncSession):
 
 @pytest.mark.asyncio
 async def test_signup_login_and_scoped_api_key(db_session: AsyncSession):
-    """Test user signup, workspace creation, and authenticating with a generated cs_live_ API key."""
+    """Test first-user signup bootstrap, subsequent signup bloqueo when ALLOW_SIGNUP=false, and cs_live_ API key auth."""
+    from sqlalchemy import delete
+
+    from cluestate.models import User, Workspace
+
+    # Clear pre-seeded fixture user so we test initial first-user bootstrap (user_count == 0)
+    await db_session.execute(delete(Workspace))
+    await db_session.execute(delete(User))
+    await db_session.commit()
+
     app = create_app()
 
     async def override_get_session():
@@ -58,7 +67,7 @@ async def test_signup_login_and_scoped_api_key(db_session: AsyncSession):
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as ac:
-        # 1. Sign up
+        # 1. First user sign up succeeds even with ALLOW_SIGNUP=false
         signup_res = await ac.post(
             "/api/auth/signup",
             json={
@@ -74,9 +83,21 @@ async def test_signup_login_and_scoped_api_key(db_session: AsyncSession):
         assert data["workspace"]["name"] == "Acme Corp"
         assert data["initial_api_key"].startswith("cs_live_")
 
+        # 2. Second public signup is blocked (403 Forbidden) by default when ALLOW_SIGNUP=false
+        second_signup = await ac.post(
+            "/api/auth/signup",
+            json={
+                "email": "attacker@example.com",
+                "password": "StrongPassword123!",
+                "full_name": "Attacker",
+                "workspace_name": "Unauthorized WS",
+            },
+        )
+        assert second_signup.status_code == 403
+
         api_key = data["initial_api_key"]
 
-        # 2. Use the initial_api_key to create an entity in Acme Corp's workspace
+        # 3. Use the initial_api_key to create an entity in Acme Corp's workspace
         ent_res = await ac.post(
             "/api/entities",
             headers={"Authorization": f"Bearer {api_key}"},

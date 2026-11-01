@@ -57,6 +57,16 @@ export const TopicModal: React.FC<TopicModalProps> = ({
 
   if (!isOpen) return null;
 
+  const handleNameChange = (nextName: string) => {
+    setName(nextName);
+    if (!initialTopic) {
+      const lower = nextName.toLowerCase();
+      if (/(allergy|allergies|medical|health|budget|salary|security|compliance)/.test(lower)) {
+        setUpdatePolicy('review');
+      }
+    }
+  };
+
   const handleCardinalityChange = (nextCardinality: TopicCardinality) => {
     setCardinality(nextCardinality);
     if (nextCardinality === 'single' && updatePolicy === 'append') {
@@ -133,7 +143,7 @@ export const TopicModal: React.FC<TopicModalProps> = ({
               className="input"
               placeholder="e.g. shoe_preferences, contract_budget, account_tier"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => handleNameChange(e.target.value)}
               required
               disabled={!!initialTopic}
             />

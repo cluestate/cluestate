@@ -9,8 +9,7 @@ ClueState provides both synchronous (`ClueState`) and asynchronous (`AsyncClueSt
 Depends only on `httpx` and `pydantic` (ideal for thin microservices, AI workers, or serverless functions):
 
 ```bash
-pip install "git+https://github.com/cluestate/cluestate.git#subdirectory=sdks/python"
-# Or from a local checkout: pip install ./sdks/python
+pip install cluestate-sdk
 ```
 
 Import from `cluestate_sdk`:
@@ -24,7 +23,7 @@ from cluestate_sdk import ClueState, AsyncClueState, ClueStateError
 If you already have the full ClueState engine package installed, the client is exported directly from `cluestate`:
 
 ```bash
-pip install "git+https://github.com/cluestate/cluestate.git"
+pip install cluestate
 ```
 
 ```python

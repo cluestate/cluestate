@@ -7,7 +7,7 @@ Understand every customer beyond the data. Turn fragmented customer interactions
 Give your customer service teams, personalization engines, and AI agents the structured context they need.
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/status-v0.1.0--alpha-amber.svg)](CHANGELOG.md)
+[![Status](https://img.shields.io/badge/status-v0.1.1--alpha-amber.svg)](CHANGELOG.md)
 [![Python SDK](https://img.shields.io/badge/python-3.11+-green.svg)](docs/python-sdk.md)
 [![TypeScript SDK](https://img.shields.io/badge/typescript-zero--dependency-3178C6.svg)](docs/typescript-sdk.md)
 [![Docker](https://img.shields.io/badge/docker-ready-2496ED.svg)](docker-compose.yml)
@@ -190,7 +190,7 @@ ClueState includes official typed SDKs in [`sdks/python`](sdks/python) and [`sdk
 **Option A — Lightweight Client (`cluestate-sdk`, depends only on `httpx` and `pydantic`):**
 
 ```bash
-pip install "git+https://github.com/cluestate/cluestate.git#subdirectory=sdks/python"
+pip install cluestate-sdk
 ```
 
 ```python
@@ -218,7 +218,7 @@ print(intel.formatted_prompt)
 **Option B — Full Platform Distribution (`cluestate`):**
 
 ```bash
-pip install "git+https://github.com/cluestate/cluestate.git"
+pip install cluestate
 ```
 
 ```python
@@ -232,8 +232,7 @@ See the [Python SDK Reference](docs/python-sdk.md) and [`examples/python_quickst
 Zero runtime dependencies. Runs natively in Node.js 18+, Bun, Deno, Cloudflare Workers, and Vercel Edge:
 
 ```bash
-# Install from a local checkout or workspace:
-npm install ./sdks/typescript
+npm install @cluestate/sdk
 ```
 
 ```typescript

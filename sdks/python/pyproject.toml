@@ -4,13 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cluestate-sdk"
-version = "0.1.0"
+version = "0.1.1"
 description = "ClueState Python SDK — Evidence-backed customer and entity intelligence infrastructure."
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.9"
 authors = [
-    { name = "ClueState Contributors" },
+    { name = "Marko", email = "hello@cluestate.com" },
 ]
 keywords = ["cluestate", "customer-intelligence", "entity-state", "sdk", "ai"]
 dependencies = [

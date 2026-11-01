@@ -1,10 +1,10 @@
 """FastAPI application — unified entry point for the ClueState API and Platform UI."""
 
 import logging
-import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -77,24 +77,28 @@ def create_app() -> FastAPI:
         return {
             "status": "ok",
             "version": __version__,
-            "llm_model": settings.llm_model,
-            "database": "sqlite" if settings.is_sqlite else "postgresql",
         }
 
     # ── Platform UI (compiled React SPA) ──
-    static_dir = os.path.join(os.path.dirname(__file__), "static")
-    if os.path.exists(static_dir) and os.path.exists(os.path.join(static_dir, "index.html")):
-        assets_dir = os.path.join(static_dir, "assets")
-        if os.path.exists(assets_dir):
-            app.mount("/assets", StaticFiles(directory=assets_dir), name="static-assets")
+    static_root = (Path(__file__).parent / "static").resolve()
+    index_file = static_root / "index.html"
+    if static_root.is_dir() and index_file.is_file():
+        assets_dir = static_root / "assets"
+        if assets_dir.is_dir():
+            app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="static-assets")
 
         @app.get("/{full_path:path}", include_in_schema=False)
         async def serve_admin_spa(full_path: str):
-            """Serve the React SPA. Falls back to index.html for client-side routing."""
-            target = os.path.join(static_dir, full_path)
-            if full_path and os.path.isfile(target):
-                return FileResponse(target)
-            return FileResponse(os.path.join(static_dir, "index.html"))
+            """Serve the React SPA. Enforces strict path containment within static_root."""
+            if full_path.startswith("api/"):
+                raise HTTPException(status_code=404, detail="Not found")
+            try:
+                target = (static_root / full_path).resolve()
+                if full_path and target.is_relative_to(static_root) and target.is_file():
+                    return FileResponse(target)
+            except (ValueError, OSError):
+                pass
+            return FileResponse(index_file)
     else:
         @app.get("/", include_in_schema=False)
         async def root():

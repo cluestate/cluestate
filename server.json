@@ -3,7 +3,7 @@
   "name": "io.github.cluestate/cluestate",
   "title": "ClueState Customer Intelligence MCP",
   "description": "ClueState — Evidence-backed customer and entity intelligence infrastructure.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "repository": {
     "url": "https://github.com/cluestate/cluestate",
     "source": "github"
@@ -12,7 +12,7 @@
     {
       "registryType": "pypi",
       "identifier": "cluestate",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "transport": {
         "type": "stdio"
       },

@@ -140,6 +140,7 @@ jobs:
         with:
           node-version: "22.14.0"
           registry-url: "https://registry.npmjs.org"
+          scope: "@cluestate"
 
       - name: Install dependencies & build
         working-directory: ./sdks/typescript
@@ -149,7 +150,9 @@ jobs:
 
       - name: Publish to npm
         working-directory: ./sdks/typescript
-        run: npm publish --access public
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > .npmrc
+          npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 

@@ -33,7 +33,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/cluestate/cluestate.git",
+    "url": "git+https://github.com/cluestate/cluestate.git",
     "directory": "sdks/typescript"
   },
   "engines": {

@@ -162,7 +162,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 whiteSpace: 'nowrap',
               }}
             >
-              {health ? `${health.database.toUpperCase()} • ${health.llm_model}` : 'Connecting...'}
+              {health
+                ? `${(health.database || 'engine').toUpperCase()} • ${health.llm_model || 'active'}`
+                : 'Connecting...'}
             </div>
           </div>
           <Activity size={15} color="var(--text-muted)" />

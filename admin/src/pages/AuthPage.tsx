@@ -11,6 +11,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthenticated }) => {
   const [mode, setMode] = useState<'login' | 'signup' | 'apikey'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [workspaceName, setWorkspaceName] = useState('');
   const [directApiKey, setDirectApiKey] = useState('');
@@ -20,6 +21,12 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthenticated }) => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    if (mode === 'signup' && password !== confirmPassword) {
+      setError('Passwords do not match. Please re-enter your password.');
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -286,6 +293,29 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthenticated }) => {
                   />
                 </div>
               </div>
+
+              {mode === 'signup' && (
+                <div className="input-group">
+                  <label className="input-label">Repeat Password</label>
+                  <div style={{ position: 'relative' }}>
+                    <Lock
+                      size={15}
+                      color="var(--text-muted)"
+                      style={{ position: 'absolute', left: '12px', top: '12px' }}
+                    />
+                    <input
+                      type="password"
+                      className="input"
+                      style={{ paddingLeft: '36px' }}
+                      placeholder="••••••••"
+                      minLength={8}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      required
+                    />
+                  </div>
+                </div>
+              )}
             </>
           )}
 

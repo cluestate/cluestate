@@ -37,8 +37,8 @@ RUN mkdir -p /app/data
 EXPOSE 8000
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-    CMD python -c "import httpx; r = httpx.get('http://localhost:8000/api/health'); r.raise_for_status()"
+HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=5 \
+    CMD python -c "import httpx; r = httpx.get('http://127.0.0.1:8000/api/health', timeout=3.0); r.raise_for_status()"
 
 # Run
 CMD ["cluestate", "serve", "--host", "0.0.0.0", "--port", "8000"]

@@ -181,6 +181,6 @@ export interface IngestResponse {
 export interface HealthInfo {
   status: string;
   version: string;
-  llm_model: string;
-  database: string;
+  llm_model?: string;
+  database?: string;
 }

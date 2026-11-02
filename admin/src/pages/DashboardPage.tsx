@@ -383,7 +383,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                   <Database size={14} color="var(--success)" />
                   Database
                 </span>
-                <span className="badge badge-success">{health?.database.toUpperCase() || 'SQLITE'}</span>
+                <span className="badge badge-success">{health?.database ? health.database.toUpperCase() : 'CONNECTED'}</span>
               </div>
             </div>
           </div>

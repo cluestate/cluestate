@@ -1,6 +1,7 @@
 """FastAPI application — unified entry point for the ClueState API and Platform UI."""
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -26,6 +27,16 @@ async def lifespan(app: FastAPI):
         f"Database: {settings.database_url.split('@')[-1] if '@' in settings.database_url else settings.database_url}"
     )
     logger.info(f"LLM Model: {settings.llm_model}")
+
+    # Ensure provider API keys are populated in os.environ for LiteLLM
+    if settings.openai_api_key:
+        os.environ["OPENAI_API_KEY"] = settings.openai_api_key
+    if settings.anthropic_api_key:
+        os.environ["ANTHROPIC_API_KEY"] = settings.anthropic_api_key
+    if settings.gemini_api_key:
+        os.environ["GEMINI_API_KEY"] = settings.gemini_api_key
+    if settings.mistral_api_key:
+        os.environ["MISTRAL_API_KEY"] = settings.mistral_api_key
 
     await init_db()
     logger.info("Database initialized")

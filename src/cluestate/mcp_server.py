@@ -105,7 +105,6 @@ def create_mcp_server() -> "MCPServer":
             Episode,
             Memory,
             MemoryStatus,
-            SourceType,
             Topic,
             Workspace,
             ensure_workspace_source_type,

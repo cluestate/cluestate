@@ -10,7 +10,6 @@ from .models import (
     ClaimType,
     EntityType,
     MemoryStatus,
-    SourceType,
     TopicCardinality,
     UpdatePolicy,
     normalize_source_type,

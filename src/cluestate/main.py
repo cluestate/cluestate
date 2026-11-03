@@ -64,7 +64,9 @@ def create_app() -> FastAPI:
         allow_origins=settings.parsed_cors_origins,
         allow_credentials=True,
         allow_methods=["*"],
-        allow_headers=["Authorization", "Content-Type", "Accept"],
+        allow_headers=["*"],
+        expose_headers=["*"],
+        max_age=86400,
     )
 
     # ── API Routes ──

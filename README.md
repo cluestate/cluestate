@@ -358,7 +358,7 @@ ClueState uses [LiteLLM](https://docs.litellm.ai/) and supports OpenAI, Anthropi
 | `OPENAI_API_KEY` | — | API key for OpenAI (or `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`) |
 | `DATABASE_URL` | `sqlite+aiosqlite:///./cluestate.db` | Async SQLAlchemy database URL |
 | `SECRET_KEY` | *(auto-generated)* | Secret key for signing JWT session tokens |
-| `CORS_ORIGINS` | `https://app.cluestate.com,...` | Comma-separated allowed CORS origins |
+| `CORS_ORIGINS` | `*` | Allowed CORS origins (`*` for all client apps, or comma-separated domains) |
 
 ---
 

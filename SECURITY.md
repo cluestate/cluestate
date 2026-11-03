@@ -14,7 +14,7 @@ ClueState enforces authentication by default across all data endpoints:
 When self-hosting ClueState in production:
 
 1. **Set a Strong `SECRET_KEY`:** Generate a 32-byte random secret (`python -c "import secrets; print(secrets.token_urlsafe(32))"`) and set `SECRET_KEY` in your environment.
-2. **Configure `CORS_ORIGINS`:** Restrict `CORS_ORIGINS` to your application domains (e.g., `https://app.cluestate.com,https://cluestate.com`).
+2. **Configure `CORS_ORIGINS`:** By default, ClueState allows all client web origins (`*`) so web and mobile apps can integrate seamlessly. For private enterprise deployments, you can restrict `CORS_ORIGINS` to specific domains (e.g., `https://app.cluestate.com,https://app.coevoapps.com`).
 3. **Database Credentials:** Use a strong `POSTGRES_PASSWORD` and keep your database on an internal Docker or private VPC network without exposing port `5432` to the public internet.
 4. **TLS / HTTPS:** Always serve the API and Platform UI behind TLS (e.g., via Coolify / Traefik, Caddy, or Nginx).
 

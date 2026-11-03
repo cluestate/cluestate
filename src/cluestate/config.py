@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     port: int = 8000
     log_level: str = "info"
     app_url: str = "https://app.cluestate.com"
-    cors_origins: str = "https://app.cluestate.com,https://cluestate.com,http://localhost:5173,http://localhost:8000"
+    cors_origins: str = "*"
 
     # ─── Security & Authentication ───
     secret_key: str = Field(default_factory=_load_or_create_secret_key)

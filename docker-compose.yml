@@ -11,7 +11,7 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - SECRET_KEY=${SECRET_KEY:?Set SECRET_KEY in .env}
-      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:8000,http://localhost:5173}
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
       - LOG_LEVEL=${LOG_LEVEL:-info}
     depends_on:
       db:

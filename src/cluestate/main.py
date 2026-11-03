@@ -74,6 +74,7 @@ def create_app() -> FastAPI:
     from .api.entities import router as entities_router
     from .api.ingest import router as ingest_router
     from .api.memories import router as memories_router
+    from .api.source_types import router as source_types_router
     from .api.stats import router as stats_router
     from .api.topics import router as topics_router
 
@@ -83,6 +84,7 @@ def create_app() -> FastAPI:
     app.include_router(ingest_router, prefix="/api")
     app.include_router(memories_router, prefix="/api")
     app.include_router(stats_router, prefix="/api")
+    app.include_router(source_types_router, prefix="/api")
 
     # ── Health Check (Public) ──
     @app.get("/api/health", tags=["System"])

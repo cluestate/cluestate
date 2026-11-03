@@ -12,6 +12,7 @@ import type {
   Memory,
   MemoryStatus,
   SourceType,
+  SourceTypesResponse,
   Topic,
   TopicCardinality,
   UpdatePolicy,
@@ -223,4 +224,19 @@ export const api = {
 
   getIntelByExternalId: (externalId: string) =>
     request<IntelResponse>(`/intel/by-external-id/${encodeURIComponent(externalId)}`),
+
+  // Source Types
+  getSourceTypes: () =>
+    request<SourceTypesResponse>('/source-types'),
+
+  addSourceType: (name: string) =>
+    request<SourceTypesResponse>('/source-types', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }),
+
+  deleteSourceType: (name: string) =>
+    request<SourceTypesResponse>(`/source-types/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+    }),
 };

@@ -340,6 +340,14 @@ class ClueState:
             raise ValueError("Provide either 'external_id' or 'entity_id'")
         return IntelResponse.model_validate(data)
 
+    def get_source_types(self) -> dict[str, list[str]]:
+        """List registered source categories for the active workspace."""
+        return self._request("GET", "/source-types")
+
+    def add_source_type(self, name: str) -> dict[str, list[str]]:
+        """Register a new source category for the active workspace."""
+        return self._request("POST", "/source-types", json={"name": name})
+
     def close(self) -> None:
         if self._owns_client:
             self._http.close()
@@ -609,6 +617,14 @@ class AsyncClueState:
         else:
             raise ValueError("Provide either 'external_id' or 'entity_id'")
         return IntelResponse.model_validate(data)
+
+    async def get_source_types(self) -> dict[str, list[str]]:
+        """List registered source categories for the active workspace."""
+        return await self._request("GET", "/source-types")
+
+    async def add_source_type(self, name: str) -> dict[str, list[str]]:
+        """Register a new source category for the active workspace."""
+        return await self._request("POST", "/source-types", json={"name": name})
 
     async def close(self) -> None:
         if self._owns_client:

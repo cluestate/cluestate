@@ -8,8 +8,11 @@ export type TopicCardinality = 'single' | 'multiple';
 
 export type UpdatePolicy = 'replace' | 'append' | 'review';
 
-export type SourceType =
+export type DefaultSourceType =
   | 'conversation'
+  | 'note'
+  | 'interaction'
+  | 'custom'
   | 'email'
   | 'survey'
   | 'purchase'
@@ -17,9 +20,14 @@ export type SourceType =
   | 'call_transcript'
   | 'app_interaction'
   | 'review'
-  | 'social_media'
-  | 'note'
-  | 'custom';
+  | 'social_media';
+
+export type SourceType = DefaultSourceType | (string & {});
+
+export interface SourceTypesResponse {
+  source_types: string[];
+  defaults: string[];
+}
 
 export interface ClueStateOptions {
   /** Workspace API key (`cs_live_...`) or session token. Defaults to process.env.CLUESTATE_API_KEY */

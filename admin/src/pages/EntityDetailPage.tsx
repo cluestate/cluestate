@@ -11,7 +11,7 @@ import {
   Clock,
   Filter,
 } from 'lucide-react';
-import type { Entity, Episode, IntelResponse, Memory, MemoryStatus, SourceType } from '../types';
+import type { Entity, Episode, IntelResponse, Memory, MemoryStatus } from '../types';
 import { api } from '../api';
 import { MemoryCard } from '../components/MemoryCard';
 
@@ -35,7 +35,15 @@ export const EntityDetailPage: React.FC<EntityDetailPageProps> = ({
 
   // Ingest form state
   const [ingestText, setIngestText] = useState('');
-  const [sourceType, setSourceType] = useState<SourceType>('conversation');
+  const [sourceType, setSourceType] = useState<string>('conversation');
+  const [availableSourceTypes, setAvailableSourceTypes] = useState<string[]>([
+    'conversation',
+    'note',
+    'interaction',
+    'custom',
+  ]);
+  const [isCustomSourceType, setIsCustomSourceType] = useState(false);
+  const [customSourceTypeInput, setCustomSourceTypeInput] = useState('');
   const [sourceDesc, setSourceDesc] = useState('');
   const [isIngesting, setIsIngesting] = useState(false);
 
@@ -46,6 +54,11 @@ export const EntityDetailPage: React.FC<EntityDetailPageProps> = ({
   const loadEntityData = async () => {
     try {
       setIsLoading(true);
+      api.getSourceTypes().then(r => {
+        if (r && r.source_types && r.source_types.length > 0) {
+          setAvailableSourceTypes(r.source_types);
+        }
+      }).catch(() => {});
       const [entData, memData, epData, intelData] = await Promise.all([
         api.getEntity(entityId),
         api.getEntityMemories(entityId, undefined, undefined, true),
@@ -97,10 +110,14 @@ export const EntityDetailPage: React.FC<EntityDetailPageProps> = ({
 
     try {
       setIsIngesting(true);
+      const finalSourceType = isCustomSourceType
+        ? (customSourceTypeInput.trim() || 'custom')
+        : sourceType;
+
       await api.ingest({
         entity_id: entityId,
         content: ingestText.trim(),
-        source_type: sourceType,
+        source_type: finalSourceType,
         source_description: sourceDesc.trim() || undefined,
       });
       setIngestText('');
@@ -472,17 +489,34 @@ export const EntityDetailPage: React.FC<EntityDetailPageProps> = ({
                 <label className="input-label">Source Type</label>
                 <select
                   className="input"
-                  value={sourceType}
-                  onChange={(e) => setSourceType(e.target.value as SourceType)}
+                  value={isCustomSourceType ? '__custom__' : sourceType}
+                  onChange={(e) => {
+                    if (e.target.value === '__custom__') {
+                      setIsCustomSourceType(true);
+                    } else {
+                      setIsCustomSourceType(false);
+                      setSourceType(e.target.value);
+                    }
+                  }}
                 >
-                  <option value="conversation">Conversation / Chat</option>
-                  <option value="email">Email</option>
-                  <option value="support_ticket">Support Ticket</option>
-                  <option value="call_transcript">Call Transcript</option>
-                  <option value="review">Review / Feedback</option>
-                  <option value="note">Internal Staff Note</option>
-                  <option value="custom">Other</option>
+                  {availableSourceTypes.map((st) => (
+                    <option key={st} value={st}>
+                      {st.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}
+                    </option>
+                  ))}
+                  <option value="__custom__">+ Define New Category...</option>
                 </select>
+                {isCustomSourceType && (
+                  <input
+                    type="text"
+                    className="input"
+                    style={{ marginTop: '6px' }}
+                    placeholder="e.g. reflection, journal, review"
+                    value={customSourceTypeInput}
+                    onChange={(e) => setCustomSourceTypeInput(e.target.value)}
+                    autoFocus
+                  />
+                )}
               </div>
 
               <div className="input-group">

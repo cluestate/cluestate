@@ -56,7 +56,15 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
   const [selectedEntityId, setSelectedEntityId] = useState<string>('');
   const [externalId, setExternalId] = useState('demo_customer_01');
   const [entityName, setEntityName] = useState('Demo Customer');
-  const [sourceType, setSourceType] = useState<SourceType>('conversation');
+  const [sourceType, setSourceType] = useState<string>('conversation');
+  const [availableSourceTypes, setAvailableSourceTypes] = useState<string[]>([
+    'conversation',
+    'note',
+    'interaction',
+    'custom',
+  ]);
+  const [isCustomSourceType, setIsCustomSourceType] = useState(false);
+  const [customSourceTypeInput, setCustomSourceTypeInput] = useState('');
   const [sourceDescription, setSourceDescription] = useState('Interactive Lab Test');
   const [content, setContent] = useState(PLAYGROUND_PRESETS[0].content);
 
@@ -66,6 +74,11 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
 
   useEffect(() => {
     loadEntities();
+    api.getSourceTypes().then(r => {
+      if (r && r.source_types && r.source_types.length > 0) {
+        setAvailableSourceTypes(r.source_types);
+      }
+    }).catch(() => {});
   }, []);
 
   const loadEntities = async () => {
@@ -99,9 +112,13 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
       setIsExtracting(true);
       setError(null);
 
+      const finalSourceType = isCustomSourceType
+        ? (customSourceTypeInput.trim() || 'custom')
+        : sourceType;
+
       const payload: any = {
         content: content.trim(),
-        source_type: sourceType,
+        source_type: finalSourceType,
         source_description: sourceDescription.trim() || undefined,
       };
 
@@ -219,17 +236,34 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
                 <label className="input-label">Source Type</label>
                 <select
                   className="input"
-                  value={sourceType}
-                  onChange={(e) => setSourceType(e.target.value as SourceType)}
+                  value={isCustomSourceType ? '__custom__' : sourceType}
+                  onChange={(e) => {
+                    if (e.target.value === '__custom__') {
+                      setIsCustomSourceType(true);
+                    } else {
+                      setIsCustomSourceType(false);
+                      setSourceType(e.target.value);
+                    }
+                  }}
                 >
-                  <option value="conversation">Conversation</option>
-                  <option value="email">Email</option>
-                  <option value="support_ticket">Support Ticket</option>
-                  <option value="call_transcript">Call Transcript</option>
-                  <option value="review">Review</option>
-                  <option value="note">Note</option>
-                  <option value="custom">Custom</option>
+                  {availableSourceTypes.map((st) => (
+                    <option key={st} value={st}>
+                      {st.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}
+                    </option>
+                  ))}
+                  <option value="__custom__">+ Define New Category...</option>
                 </select>
+                {isCustomSourceType && (
+                  <input
+                    type="text"
+                    className="input"
+                    style={{ marginTop: '6px' }}
+                    placeholder="e.g. reflection, journal, meeting"
+                    value={customSourceTypeInput}
+                    onChange={(e) => setCustomSourceTypeInput(e.target.value)}
+                    autoFocus
+                  />
+                )}
               </div>
 
               <div className="input-group">

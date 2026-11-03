@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Sparkles, Check, ArrowRight, Loader2 } from 'lucide-react';
-import type { Entity, IngestResponse, SourceType } from '../types';
+import type { Entity, IngestResponse } from '../types';
 import { api } from '../api';
 
 interface IngestModalProps {
@@ -22,7 +22,15 @@ export const IngestModal: React.FC<IngestModalProps> = ({
   );
   const [externalId, setExternalId] = useState('');
   const [entityName, setEntityName] = useState('');
-  const [sourceType, setSourceType] = useState<SourceType>('conversation');
+  const [sourceType, setSourceType] = useState<string>('conversation');
+  const [availableSourceTypes, setAvailableSourceTypes] = useState<string[]>([
+    'conversation',
+    'note',
+    'interaction',
+    'custom',
+  ]);
+  const [isCustomSourceType, setIsCustomSourceType] = useState(false);
+  const [customSourceTypeInput, setCustomSourceTypeInput] = useState('');
   const [sourceDescription, setSourceDescription] = useState('');
   const [content, setContent] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -32,8 +40,11 @@ export const IngestModal: React.FC<IngestModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       loadEntities();
+      loadSourceTypes();
       setResult(null);
       setError(null);
+      setIsCustomSourceType(false);
+      setCustomSourceTypeInput('');
       if (presetEntityId) {
         setSelectedEntityId(String(presetEntityId));
       }
@@ -46,6 +57,17 @@ export const IngestModal: React.FC<IngestModalProps> = ({
       setEntities(data);
     } catch {
       // Ignore entity load error
+    }
+  };
+
+  const loadSourceTypes = async () => {
+    try {
+      const res = await api.getSourceTypes();
+      if (res && res.source_types && res.source_types.length > 0) {
+        setAvailableSourceTypes(res.source_types);
+      }
+    } catch {
+      // Keep defaults
     }
   };
 
@@ -62,9 +84,13 @@ export const IngestModal: React.FC<IngestModalProps> = ({
       setIsSubmitting(true);
       setError(null);
 
+      const finalSourceType = isCustomSourceType
+        ? (customSourceTypeInput.trim() || 'custom')
+        : sourceType;
+
       const payload: any = {
         content: content.trim(),
-        source_type: sourceType,
+        source_type: finalSourceType,
         source_description: sourceDescription.trim(),
       };
 
@@ -285,17 +311,34 @@ export const IngestModal: React.FC<IngestModalProps> = ({
                 <label className="input-label">Source Type</label>
                 <select
                   className="input"
-                  value={sourceType}
-                  onChange={(e) => setSourceType(e.target.value as SourceType)}
+                  value={isCustomSourceType ? '__custom__' : sourceType}
+                  onChange={(e) => {
+                    if (e.target.value === '__custom__') {
+                      setIsCustomSourceType(true);
+                    } else {
+                      setIsCustomSourceType(false);
+                      setSourceType(e.target.value);
+                    }
+                  }}
                 >
-                  <option value="conversation">Conversation / Chat</option>
-                  <option value="email">Email</option>
-                  <option value="support_ticket">Support Ticket</option>
-                  <option value="call_transcript">Call Transcript</option>
-                  <option value="review">Review / Feedback</option>
-                  <option value="note">Internal Note</option>
-                  <option value="custom">Other Unstructured Data</option>
+                  {availableSourceTypes.map((st) => (
+                    <option key={st} value={st}>
+                      {st.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}
+                    </option>
+                  ))}
+                  <option value="__custom__">+ Define New Category...</option>
                 </select>
+                {isCustomSourceType && (
+                  <input
+                    type="text"
+                    className="input"
+                    style={{ marginTop: '6px' }}
+                    placeholder="e.g. reflection, sprint_retro, feedback"
+                    value={customSourceTypeInput}
+                    onChange={(e) => setCustomSourceTypeInput(e.target.value)}
+                    autoFocus
+                  />
+                )}
               </div>
 
               <div className="input-group">

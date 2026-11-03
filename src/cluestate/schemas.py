@@ -3,15 +3,17 @@
 from datetime import datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from .models import (
+    DEFAULT_SOURCE_TYPES,
     ClaimType,
     EntityType,
     MemoryStatus,
     SourceType,
     TopicCardinality,
     UpdatePolicy,
+    normalize_source_type,
 )
 
 # ──────────────────────────────────────────────
@@ -168,7 +170,7 @@ class MemoryUpdate(BaseModel):
 class EpisodeRead(BaseModel):
     id: int
     entity_id: int
-    source_type: SourceType
+    source_type: str = "custom"
     source_record_id: Optional[str] = None
     content: str
     content_hash: str = ""
@@ -198,7 +200,11 @@ class IngestRequest(BaseModel):
     entity_id: Optional[int] = Field(default=None, description="Internal entity ID (use this OR external_id)")
     external_id: Optional[str] = Field(default=None, description="Your app's entity ID (use this OR entity_id)")
     content: str = Field(..., min_length=1, description="The unstructured text to extract memories from")
-    source_type: SourceType = SourceType.CUSTOM
+    source_type: str = Field(
+        default="conversation",
+        max_length=50,
+        description="Source category slug (e.g. conversation, note, reflection, interaction, or any custom slug)",
+    )
     source_record_id: Optional[str] = Field(default=None, max_length=255, description="Origin CRM, ticket, or order ID")
     idempotency_key: Optional[str] = Field(default=None, max_length=255, description="Optional key to prevent duplicate ingestion")
     occurred_at: Optional[datetime] = Field(default=None, description="Timestamp when the interaction actually occurred")
@@ -206,6 +212,25 @@ class IngestRequest(BaseModel):
     meta: dict = Field(default_factory=dict, description="Any additional metadata about this ingestion")
     auto_create_entity: bool = Field(default=True, description="If true, create the entity if it doesn't exist")
     entity_name: str = Field(default="", description="Name for auto-created entity")
+
+    @field_validator("source_type", mode="before")
+    @classmethod
+    def validate_source_type(cls, v: Any) -> str:
+        return normalize_source_type(v)
+
+
+class SourceTypeCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=50, description="Source category name/slug")
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def validate_name(cls, v: Any) -> str:
+        return normalize_source_type(v)
+
+
+class SourceTypesResponse(BaseModel):
+    source_types: list[str]
+    defaults: list[str] = list(DEFAULT_SOURCE_TYPES)
 
 
 class IngestResponse(BaseModel):

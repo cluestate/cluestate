@@ -61,7 +61,14 @@ async def ensure_default_workspace(session: AsyncSession):
     result = await session.execute(select(Workspace).order_by(Workspace.id).limit(1))
     workspace = result.scalars().first()
     if not workspace:
-        workspace = Workspace(id=1, name="Default Workspace", slug="default")
+        from .models import DEFAULT_SOURCE_TYPES
+        workspace = Workspace(id=1, name="Default Workspace", slug="default", source_types=list(DEFAULT_SOURCE_TYPES))
+        session.add(workspace)
+        await session.commit()
+        await session.refresh(workspace)
+    elif not workspace.source_types:
+        from .models import DEFAULT_SOURCE_TYPES
+        workspace.source_types = list(DEFAULT_SOURCE_TYPES)
         session.add(workspace)
         await session.commit()
         await session.refresh(workspace)

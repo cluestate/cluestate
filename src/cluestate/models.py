@@ -1,10 +1,11 @@
 """SQLModel definitions — single source of truth for DB schema, API contracts, and LLM extraction."""
 
+import re
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Optional
 
-from sqlalchemy import Column, Text, UniqueConstraint
+from sqlalchemy import Column, String, Text, UniqueConstraint
 from sqlalchemy.types import JSON
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -56,6 +57,10 @@ class ClaimOperation(str, Enum):
 
 class SourceType(str, Enum):
     CONVERSATION = "conversation"
+    NOTE = "note"
+    INTERACTION = "interaction"
+    CUSTOM = "custom"
+    # Legacy aliases
     EMAIL = "email"
     SURVEY = "survey"
     PURCHASE = "purchase"
@@ -64,8 +69,32 @@ class SourceType(str, Enum):
     APP_INTERACTION = "app_interaction"
     REVIEW = "review"
     SOCIAL_MEDIA = "social_media"
-    NOTE = "note"
-    CUSTOM = "custom"
+
+
+DEFAULT_SOURCE_TYPES: list[str] = ["conversation", "note", "interaction", "custom"]
+
+
+def normalize_source_type(val: Any) -> str:
+    """Sanitize source type into a clean, lowercased slug (max 50 chars)."""
+    if isinstance(val, Enum):
+        val = val.value
+    if not val or not isinstance(val, str):
+        return "conversation"
+    clean = re.sub(r"[^a-zA-Z0-9_\-]", "_", val.strip().lower())
+    clean = re.sub(r"_+", "_", clean).strip("_")
+    return clean[:50] or "custom"
+
+
+async def ensure_workspace_source_type(workspace: "Workspace", source_type: str, session: Any) -> list[str]:
+    """Ensure a source type is registered in the workspace, adding it dynamically if new."""
+    source_type = normalize_source_type(source_type)
+    current = list(workspace.source_types or DEFAULT_SOURCE_TYPES)
+    if source_type not in current:
+        current.append(source_type)
+        workspace.source_types = current
+        session.add(workspace)
+        await session.flush()
+    return current
 
 
 def _utcnow() -> datetime:
@@ -100,6 +129,10 @@ class Workspace(SQLModel, table=True):
     name: str = Field(max_length=255)
     slug: str = Field(index=True, unique=True, max_length=255)
     owner_id: Optional[int] = Field(default=None, foreign_key="users.id", index=True)
+    source_types: list = Field(
+        default_factory=lambda: list(DEFAULT_SOURCE_TYPES),
+        sa_column=Column("source_types", JSON, nullable=False, server_default='["conversation", "note", "interaction", "custom"]'),
+    )
     created_at: datetime = Field(default_factory=_utcnow)
 
     owner: Optional[User] = Relationship(back_populates="workspaces")
@@ -180,7 +213,7 @@ class Episode(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     workspace_id: int = Field(default=1, foreign_key="workspaces.id", index=True)
     entity_id: int = Field(foreign_key="entities.id", index=True)
-    source_type: SourceType = Field(default=SourceType.CUSTOM)
+    source_type: str = Field(default="custom", max_length=50, sa_column=Column(String(50), index=True, nullable=False, server_default="custom"))
     source_record_id: Optional[str] = Field(default=None, index=True, max_length=255)
     idempotency_key: Optional[str] = Field(default=None, index=True, max_length=255)
     content: str = Field(default="", sa_column=Column(Text, nullable=False, server_default=""))

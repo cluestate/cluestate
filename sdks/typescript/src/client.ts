@@ -10,6 +10,7 @@ import type {
   ListEntitiesParams,
   ListMemoriesParams,
   Memory,
+  SourceTypesResponse,
   Topic,
   UpdateMemoryParams,
   UpdateTopicParams,
@@ -166,6 +167,22 @@ export class TopicsResource {
   }
 }
 
+export class SourceTypesResource {
+  constructor(private readonly client: ClueState) {}
+
+  async list(): Promise<SourceTypesResponse> {
+    return this.client._request<SourceTypesResponse>('GET', '/source-types');
+  }
+
+  async create(name: string): Promise<SourceTypesResponse> {
+    return this.client._request<SourceTypesResponse>('POST', '/source-types', { body: { name } });
+  }
+
+  async delete(name: string): Promise<SourceTypesResponse> {
+    return this.client._request<SourceTypesResponse>('DELETE', `/source-types/${encodeURIComponent(name)}`);
+  }
+}
+
 export class ClueState {
   public readonly apiKey: string;
   public readonly baseUrl: string;
@@ -175,6 +192,7 @@ export class ClueState {
   public readonly entities: EntitiesResource;
   public readonly memories: MemoriesResource;
   public readonly topics: TopicsResource;
+  public readonly sourceTypes: SourceTypesResource;
 
   constructor(options: ClueStateOptions = {}) {
     this.apiKey = options.apiKey ?? getEnvVar('CLUESTATE_API_KEY') ?? '';
@@ -186,6 +204,7 @@ export class ClueState {
     this.entities = new EntitiesResource(this);
     this.memories = new MemoriesResource(this);
     this.topics = new TopicsResource(this);
+    this.sourceTypes = new SourceTypesResource(this);
   }
 
   /** @internal */

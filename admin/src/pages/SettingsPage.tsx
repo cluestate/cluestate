@@ -8,6 +8,7 @@ import {
   Server,
   Plus,
   Trash2,
+  Layers,
 } from 'lucide-react';
 import type { ApiKeyItem, HealthInfo } from '../types';
 import { api } from '../api';
@@ -31,6 +32,11 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const [copiedSnippet, setCopiedSnippet] = useState<string | null>(null);
   const [selectedLang, setSelectedLang] = useState<'python' | 'ts' | 'php' | 'curl'>('python');
 
+  const [sourceTypes, setSourceTypes] = useState<string[]>([]);
+  const [defaultSourceTypes, setDefaultSourceTypes] = useState<string[]>([]);
+  const [newSourceTypeName, setNewSourceTypeName] = useState('');
+  const [isAddingSourceType, setIsAddingSourceType] = useState(false);
+
   const fetchApiKeys = async () => {
     try {
       const keys = await api.listApiKeys();
@@ -40,9 +46,45 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     }
   };
 
+  const fetchSourceTypes = async () => {
+    try {
+      const res = await api.getSourceTypes();
+      setSourceTypes(res.source_types || []);
+      setDefaultSourceTypes(res.defaults || []);
+    } catch {
+      // Keep defaults
+    }
+  };
+
   useEffect(() => {
     fetchApiKeys();
+    fetchSourceTypes();
   }, []);
+
+  const handleAddSourceType = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newSourceTypeName.trim()) return;
+    try {
+      setIsAddingSourceType(true);
+      const res = await api.addSourceType(newSourceTypeName.trim());
+      setSourceTypes(res.source_types || []);
+      setNewSourceTypeName('');
+    } catch (err: any) {
+      alert(err.message || 'Failed to add source type');
+    } finally {
+      setIsAddingSourceType(false);
+    }
+  };
+
+  const handleDeleteSourceType = async (name: string) => {
+    if (!confirm(`Remove '${name}' from workspace categories?`)) return;
+    try {
+      const res = await api.deleteSourceType(name);
+      setSourceTypes(res.source_types || []);
+    } catch (err: any) {
+      alert(err.message || 'Failed to remove source type');
+    }
+  };
 
   const handleCreateKey = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -417,6 +459,78 @@ curl ${baseUrl}/intel/by-external-id/cust_101 \\
                 <BookOpen size={15} />
                 <span>Open Interactive OpenAPI / Swagger Docs</span>
               </a>
+            </div>
+          </div>
+
+          {/* Workspace Source Categories */}
+          <div className="card">
+            <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+              <Layers size={18} color="var(--accent-primary)" />
+              Workspace Provenance Categories
+            </h3>
+            <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '16px' }}>
+              Source types identify where memories originate (e.g. <code>conversation</code>, <code>reflection</code>, <code>note</code>). Any new category ingested via API or SDK is automatically discovered and registered here.
+            </p>
+
+            <form onSubmit={handleAddSourceType} style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+              <input
+                type="text"
+                className="input"
+                placeholder="New category slug (e.g. reflection)"
+                value={newSourceTypeName}
+                onChange={(e) => setNewSourceTypeName(e.target.value)}
+                style={{ fontSize: '12px' }}
+                required
+              />
+              <button type="submit" className="btn btn-secondary btn-sm" disabled={isAddingSourceType} style={{ flexShrink: 0 }}>
+                <Plus size={14} />
+                <span>{isAddingSourceType ? 'Adding...' : 'Add'}</span>
+              </button>
+            </form>
+
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+              {sourceTypes.map((st) => {
+                const isDefault = defaultSourceTypes.includes(st);
+                return (
+                  <div
+                    key={st}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '4px 10px',
+                      borderRadius: '100px',
+                      background: isDefault ? 'var(--bg-secondary)' : 'rgba(99, 102, 241, 0.1)',
+                      border: `1px solid ${isDefault ? 'var(--border-subtle)' : 'var(--accent-primary)'}`,
+                      fontSize: '12px',
+                      color: isDefault ? 'var(--text-secondary)' : 'var(--accent-primary-hover)',
+                      fontWeight: 500,
+                    }}
+                  >
+                    <span>{st}</span>
+                    {isDefault ? (
+                      <span style={{ fontSize: '10px', color: 'var(--text-muted)', opacity: 0.7 }}>default</span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteSourceType(st)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          padding: 0,
+                          cursor: 'pointer',
+                          color: 'var(--danger)',
+                          display: 'flex',
+                          alignItems: 'center',
+                        }}
+                        title={`Remove '${st}' category`}
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>

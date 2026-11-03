@@ -99,11 +99,30 @@ def create_mcp_server() -> "MCPServer":
             extract_memories_from_text,
             process_extracted_claims,
         )
-        from .models import Entity, EntityType, Episode, Memory, MemoryStatus, SourceType, Topic
+        from .models import (
+            Entity,
+            EntityType,
+            Episode,
+            Memory,
+            MemoryStatus,
+            SourceType,
+            Topic,
+            Workspace,
+            ensure_workspace_source_type,
+            normalize_source_type,
+        )
 
         await init_db()
 
         async with get_session_factory()() as session:
+            workspace = await session.get(Workspace, workspace_id)
+            if not workspace:
+                from .database import ensure_default_workspace
+                workspace = await ensure_default_workspace(session)
+
+            st = normalize_source_type(source_type)
+            await ensure_workspace_source_type(workspace, st, session)
+
             res = await session.execute(
                 select(Entity).where(
                     Entity.workspace_id == workspace_id,
@@ -120,11 +139,6 @@ def create_mcp_server() -> "MCPServer":
                 )
                 session.add(entity)
                 await session.flush()
-
-            try:
-                st = SourceType(source_type.lower())
-            except ValueError:
-                st = SourceType.CONVERSATION
 
             now = datetime.now(timezone.utc)
             episode = Episode(

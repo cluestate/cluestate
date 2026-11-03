@@ -3,6 +3,7 @@ export {
   ClueStateError,
   EntitiesResource,
   MemoriesResource,
+  SourceTypesResource,
   TopicsResource,
 } from './client';
 
@@ -11,6 +12,7 @@ export type {
   ClueStateOptions,
   CreateEntityParams,
   CreateTopicParams,
+  DefaultSourceType,
   Entity,
   EntityType,
   Episode,
@@ -23,6 +25,7 @@ export type {
   Memory,
   MemoryStatus,
   SourceType,
+  SourceTypesResponse,
   Topic,
   TopicCardinality,
   UpdateMemoryParams,

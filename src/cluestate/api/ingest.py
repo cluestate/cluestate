@@ -14,7 +14,17 @@ from ..engine import (
     extract_memories_from_text,
     process_extracted_claims,
 )
-from ..models import Entity, EntityType, Episode, Evidence, Memory, MemoryStatus, Topic, Workspace
+from ..models import (
+    Entity,
+    EntityType,
+    Episode,
+    Evidence,
+    Memory,
+    MemoryStatus,
+    Topic,
+    Workspace,
+    ensure_workspace_source_type,
+)
 from ..schemas import EvidenceRead, IngestRequest, IngestResponse, MemoryRead
 from ..security import get_current_workspace
 
@@ -120,7 +130,9 @@ async def ingest(
     if not entity:
         raise HTTPException(status_code=404, detail="Entity not found and auto_create_entity is disabled")
 
-    # ── 3. Create Episode ──
+    # ── 3. Create Episode with Auto-Registered Source Type ──
+    await ensure_workspace_source_type(workspace, body.source_type, session)
+
     now = datetime.now(timezone.utc)
     content_hash = compute_content_hash(body.content)
     episode = Episode(

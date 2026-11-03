@@ -50,12 +50,14 @@ await cs.topics.create({
 
 ### 2. Ingesting Customer Interactions (`cs.ingest`)
 
+`sourceType` can be any core default (`'conversation'`, `'note'`, `'interaction'`, `'custom'`) or any domain-specific slug (e.g. `'reflection'` in a productivity app, `'support_ticket'` in a CRM). Unregistered source categories are automatically registered in the workspace catalog.
+
 ```typescript
 const result = await cs.ingest({
   externalId: 'cust_402',
   entityName: 'Marcus Vance',
   content: 'We migrated from MySQL to PostgreSQL on AWS and have a Q4 budget of $25,000.',
-  sourceType: 'support_ticket',
+  sourceType: 'reflection', // or any custom category
   sourceRecordId: 'ticket_8841',
   idempotencyKey: 'evt_ticket_8841',
   occurredAt: new Date(),

@@ -1,88 +1,115 @@
 # ClueState
 
-**Evidence-backed customer and entity intelligence infrastructure.**
+**Deterministic, evidence-backed state and memory layer for AI agents and customer applications.**
 
-Understand every customer beyond the data. Turn fragmented customer interactions, transactions, and conversations into a continuously updated, evidence-backed entity state.
+Separate probabilistic LLM extraction from durable database state. Turn unstructured conversations, support tickets, and product events into schema-enforced, character-verified facts in PostgreSQL or SQLite—no vector database required.
 
-Give your customer service teams, personalization engines, and AI agents the structured context they need.
+[**Website (`cluestate.com`)**](https://cluestate.com) · [**Architecture**](docs/architecture.md) · [**Python SDK**](docs/python-sdk.md) · [**TypeScript SDK**](docs/typescript-sdk.md) · [**MCP Server**](#model-context-protocol-mcp-server)
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/status-v0.1.1--alpha-amber.svg)](CHANGELOG.md)
-[![Python SDK](https://img.shields.io/badge/python-3.11+-green.svg)](docs/python-sdk.md)
-[![TypeScript SDK](https://img.shields.io/badge/typescript-zero--dependency-3178C6.svg)](docs/typescript-sdk.md)
+[![Release](https://img.shields.io/badge/version-v0.1.1-green.svg)](CHANGELOG.md)
+[![Python](https://img.shields.io/badge/python-3.11+-3776AB.svg)](docs/python-sdk.md)
+[![TypeScript](https://img.shields.io/badge/typescript-zero--dependency-3178C6.svg)](docs/typescript-sdk.md)
 [![Docker](https://img.shields.io/badge/docker-ready-2496ED.svg)](docker-compose.yml)
 
 ---
 
-## Overview
+## Why ClueState?
 
-Organizations define what they want to know about their customers or entities using typed **State Schemas** (`Topic`). ClueState ingests structured and unstructured interactions (`Episode`), extracts atomic claims (`Memory`), verifies source quotations (`Evidence`), and maintains the resulting entity state over time according to explicit rules.
+Vector databases (RAG) and rolling text summaries break down when user or customer facts evolve over time.
 
-- **Enforced State Schemas:** Define typed contracts (`text`, `number`, `boolean`, `enum`, `list`) with explicit cardinality (`single` vs. `multiple`) and update policies (`replace`, `append`, `review`). Values that violate a topic's type or enum contract are quarantined to `pending_review` rather than entering active state.
-- **Evidence & Provenance:** Every claim links to its source episode with programmatically verified character offsets (`char_start`, `char_end`), source record IDs, interaction timestamps (`occurred_at`), and SHA-256 content hashes.
-- **Event-Time State Resolution:** Distinguishes between coexisting attributes (`add`), corroborating evidence (`support`), and superseding facts (`supersede`), while respecting chronological `occurred_at` timestamps so late-arriving historical imports do not overwrite newer state.
-- **Official Typed SDKs:** Ergonomic, type-safe clients for **Python** (`ClueState` & `AsyncClueState`) and **TypeScript / JavaScript** (`@cluestate/sdk`, zero dependencies, universal `fetch`).
-- **Multi-Tenant Platform & UI:** Includes workspace isolation, user authentication, privilege-separated API keys (`cs_live_...`), Alembic database migrations, and a built-in dark-mode management UI.
+When a customer raises their annual budget from `$10,000` to `$25,000`, migrates from MySQL to PostgreSQL, or states a hard compliance requirement, vector search pulls stale chunks alongside current ones, and LLM summaries lose the exact source quote. Worse, your backend code cannot run deterministic SQL or typed business logic against a paragraph of prose.
 
----
+**ClueState keeps extraction probabilistic and state deterministic:**
 
-## Business Applications
-
-- **Customer Service:** Give support teams and workflows immediate access to a customer's reported issues, account tier, communication preferences, and prior resolutions—backed by source quotes.
-- **Personalization:** Enrich customer profiles with brand affinities, sizing, price sensitivity, and behavioral patterns without overwriting coexisting preferences.
-- **AI Agents:** Provide deterministic, structured entity state in system prompts or via the Model Context Protocol (MCP) instead of relying solely on raw transcript retrieval.
+| Capability | Vector RAG | Rolling Summaries | ClueState |
+| :--- | :--- | :--- | :--- |
+| **State updates & contradictions** | Retrieves old + new chunks together | Overwrites or muddles nuance | Enforced per-topic `replace` / `append` / `review` |
+| **Typed schemas & validation** | Unstructured text chunks | Unformatted prose | Enforced `number`, `enum`, `boolean`, `list`, `text` |
+| **Citation integrity** | Whole chunk heuristics | Lost in summarization | Verified `[char_start, char_end]` offsets + SHA-256 |
+| **Out-of-order imports** | No temporal state resolution | Corrupted by late backfills | Chronological `occurred_at` validity intervals |
+| **Storage & queryability** | Requires vector store | Prompt-only context | Standard PostgreSQL or SQLite + `formatted_prompt` |
 
 ---
 
-## How State Maintenance Works
+## Quickstart (Under 60 Seconds)
 
-### 1. Define Topic Schemas
+### 1. Start the Engine
 
-Topics act as an enforced schema contract rather than a loose prompt hint:
+```bash
+pip install cluestate
+cp .env.example .env   # Set OPENAI_API_KEY (or Anthropic / Gemini / Ollama)
+cluestate serve
+```
 
-| Property | Purpose | Example (`annual_budget`) | Example (`brand_preferences`) |
-|:---|:---|:---|:---|
-| `data_type` | Enforces and coerces value types | `number` | `list` |
-| `cardinality` | Whether an entity has one or many active values | `single` | `multiple` |
-| `update_policy` | How new claims interact with existing state | `replace` | `append` |
+Or launch API + PostgreSQL + Web UI with Docker Compose:
 
-When a customer with existing preferences for *Nike* and *Adidas* running shoes mentions buying *Salomon* trail shoes, `cardinality: multiple` (`update_policy: append`) ensures all three preferences coexist. When the same customer updates their annual budget from `$10,000` to `$15,000`, `cardinality: single` (`update_policy: replace`) marks the `$10,000` claim as `superseded` and promotes `$15,000` as the active state.
+```bash
+git clone https://github.com/cluestate/cluestate.git && cd cluestate
+cp .env.example .env   # Set OPENAI_API_KEY, POSTGRES_PASSWORD, SECRET_KEY
+docker compose up -d --build
+```
 
-### 2. Ingest an Interaction
+Open `http://localhost:8000` (local) to create your workspace account and mint a `cs_live_...` API key.
 
-Send an interaction via SDK or REST API:
+### 2. Define Schema, Ingest & Query
 
 ```python
-# Python SDK
-client.ingest(
+from cluestate import ClueState
+
+cs = ClueState(api_key="cs_live_YOUR_API_KEY", base_url="http://localhost:8000")
+
+# 1. Define a typed state contract
+cs.topics.create(
+    name="annual_budget",
+    description="Approved annual software spend in USD",
+    data_type="number",
+    cardinality="single",    # only one active value at a time
+    update_policy="replace", # newer verified facts supersede older ones
+)
+
+# 2. Ingest an interaction with idempotency and event time
+res = cs.ingest(
     external_id="cust_402",
     entity_name="Marcus Vance",
     source_type="support_ticket",
     source_record_id="ticket_8841",
     idempotency_key="evt_ticket_8841",
     occurred_at="2026-10-31T14:20:00Z",
-    content="We migrated our primary database from MySQL to PostgreSQL last month. Our approved software budget for Q4 is $25,000, and we prefer technical updates via Slack.",
+    content="We migrated our primary database from MySQL to PostgreSQL. Approved Q4 software budget is $25,000.",
 )
+
+# 3. Query structured state + prompt-ready summary
+intel = cs.get_intel("cust_402")
+print(intel.formatted_prompt)
 ```
 
 <details>
-<summary>Or via TypeScript SDK / cURL</summary>
+<summary>TypeScript SDK &amp; cURL examples</summary>
 
 ```typescript
-// TypeScript SDK
-await cluestate.ingest({
-    externalId: "cust_402",
-    entityName: "Marcus Vance",
-    sourceType: "support_ticket",
-    sourceRecordId: "ticket_8841",
-    idempotencyKey: "evt_ticket_8841",
-    occurredAt: "2026-10-31T14:20:00Z",
-    content: "We migrated our primary database from MySQL to PostgreSQL last month. Our approved software budget for Q4 is $25,000, and we prefer technical updates via Slack.",
+import { ClueState } from "@cluestate/sdk";
+
+const cs = new ClueState({
+  apiKey: process.env.CLUESTATE_API_KEY!,
+  baseUrl: "http://localhost:8000",
 });
+
+await cs.ingest({
+  externalId: "cust_402",
+  entityName: "Marcus Vance",
+  sourceType: "support_ticket",
+  sourceRecordId: "ticket_8841",
+  idempotencyKey: "evt_ticket_8841",
+  occurredAt: "2026-10-31T14:20:00Z",
+  content: "We migrated our primary database from MySQL to PostgreSQL. Approved Q4 software budget is $25,000.",
+});
+
+const intel = await cs.getIntel("cust_402");
+console.log(intel.formatted_prompt);
 ```
 
 ```bash
-# cURL
 curl -X POST http://localhost:8000/api/ingest \
   -H "Authorization: Bearer cs_live_YOUR_API_KEY" \
   -H "Content-Type: application/json" \
@@ -93,22 +120,26 @@ curl -X POST http://localhost:8000/api/ingest \
     "source_record_id": "ticket_8841",
     "idempotency_key": "evt_ticket_8841",
     "occurred_at": "2026-10-31T14:20:00Z",
-    "content": "We migrated our primary database from MySQL to PostgreSQL last month. Our approved software budget for Q4 is $25,000, and we prefer technical updates via Slack."
+    "content": "We migrated our primary database from MySQL to PostgreSQL. Approved Q4 software budget is $25,000."
   }'
+
+curl http://localhost:8000/api/intel/by-external-id/cust_402 \
+  -H "Authorization: Bearer cs_live_YOUR_API_KEY"
 ```
+
 </details>
 
-### 3. Extracted & Verified Output
+### 3. Verified Response Payload
 
-ClueState validates extracted values against your topic schemas and verifies that every `excerpt` exists in the source episode:
+Every extracted claim includes typed `structured_value` coercion and programmatically verified byte/character spans against the original source text:
 
 ```json
 {
   "episode_id": 14,
   "entity_id": 1,
-  "memories_extracted": 3,
+  "memories_extracted": 2,
   "memories_updated": 1,
-  "memories_new": 2,
+  "memories_new": 1,
   "idempotent_replay": false,
   "memories": [
     {
@@ -123,16 +154,16 @@ ClueState validates extracted values against your topic schemas and verifies tha
       "evidence": [
         {
           "episode_id": 14,
-          "excerpt": "We migrated our primary database from MySQL to PostgreSQL last month.",
+          "excerpt": "We migrated our primary database from MySQL to PostgreSQL.",
           "is_verified": true,
           "char_start": 0,
-          "char_end": 69
+          "char_end": 58
         }
       ]
     },
     {
       "id": 32,
-      "topic_name": "budget",
+      "topic_name": "annual_budget",
       "claim": "Approved Q4 software budget is $25,000",
       "value": "25000",
       "structured_value": 25000,
@@ -142,10 +173,10 @@ ClueState validates extracted values against your topic schemas and verifies tha
       "evidence": [
         {
           "episode_id": 14,
-          "excerpt": "Our approved software budget for Q4 is $25,000",
+          "excerpt": "Approved Q4 software budget is $25,000.",
           "is_verified": true,
-          "char_start": 70,
-          "char_end": 116
+          "char_start": 59,
+          "char_end": 98
         }
       ]
     }
@@ -153,83 +184,51 @@ ClueState validates extracted values against your topic schemas and verifies tha
 }
 ```
 
-### 4. Query Customer State
+---
 
-```python
-# Python SDK
-intel = client.get_intel(external_id="cust_402")
-print(intel.formatted_prompt)
-```
+## Core Architecture & Guarantees
 
-<details>
-<summary>Or via TypeScript SDK / cURL</summary>
+ClueState models entities as **Workspace → Topic → Entity → Episode → Memory → Evidence**. See [docs/architecture.md](docs/architecture.md) for the complete specification.
 
-```typescript
-// TypeScript SDK
-const intel = await cluestate.getIntel({ externalId: "cust_402" });
-console.log(intel.formatted_prompt);
-```
-
-```bash
-# cURL
-curl http://localhost:8000/api/intel/by-external-id/cust_402 \
-  -H "Authorization: Bearer cs_live_YOUR_API_KEY"
-```
-</details>
-
-Returns both the structured `memories` array (for application logic, CRMs, and personalization) and a pre-formatted `formatted_prompt` block (for LLM context injection).
+1. **Strict Schema Enforcement (`Topic`)**
+   - Define `data_type` (`text`, `number`, `boolean`, `enum`, `list`), `cardinality` (`single` vs. `multiple`), and `update_policy` (`replace`, `append`, `review`).
+   - Sensitive topic categories (`allergy`, `health`, `medical`, `budget`, `security`, `compliance`) default to the `review` policy unless explicitly overridden.
+   - Values violating a topic's type or `enum_values` contract are quarantined to `pending_review` instead of corrupting active state.
+2. **Programmatic Provenance (`Evidence`)**
+   - Separates source verification from LLM confidence. Every excerpt is programmatically matched against `Episode.content` with exact `[char_start, char_end]` offsets and SHA-256 `content_hash`.
+   - Unverified paraphrases have confidence capped below `conflict_threshold` so hallucinations cannot supersede verified state.
+3. **Event-Time State Resolution (`occurred_at`)**
+   - Evaluates extraction operations (`add`, `support`, `supersede`, `update`, `contradict`, `abstain`) against `valid_from` / `valid_to` intervals.
+   - Late-arriving historical backfills (`event_time < existing.valid_from`) are recorded directly as historical (`superseded`) without overwriting newer facts.
+4. **Relational Storage & Multi-Tenant Security**
+   - Runs natively on **SQLite** or **PostgreSQL** with Alembic migrations (`cluestate migrate`).
+   - Enforces tenant isolation per `workspace_id`, ships a dark-mode review UI, and separates browser JWT sessions from SHA-256-hashed data-plane keys (`cs_live_...`) that return `403 Forbidden` on key-admin endpoints.
+   - Deleting a memory (`cluestate_forget` / `DELETE /api/memories/{id}`) also cleans up orphaned source episodes.
 
 ---
 
-## Official SDKs (Python & TypeScript)
+## Official SDKs
 
-ClueState includes official typed SDKs in [`sdks/python`](sdks/python) and [`sdks/typescript`](sdks/typescript) for integrating continuous customer and entity intelligence into backend services, AI agent loops, and web applications.
+### Python ([`docs/python-sdk.md`](docs/python-sdk.md) · [`examples/python_quickstart.py`](examples/python_quickstart.py))
 
-### Python SDK ([Documentation](docs/python-sdk.md) · [`sdks/python`](sdks/python))
-
-**Option A — Lightweight Client (`cluestate-sdk`, depends only on `httpx` and `pydantic`):**
+Provides sync (`ClueState`) and async (`AsyncClueState`) clients backed by Pydantic v2 types:
 
 ```bash
-pip install cluestate-sdk
+pip install cluestate-sdk   # Lightweight client (httpx + pydantic only)
+# or: pip install cluestate # Full platform distribution
 ```
 
 ```python
-from cluestate_sdk import ClueState
+from cluestate_sdk import AsyncClueState
 
-client = ClueState(
-    api_key="cs_live_YOUR_API_KEY",
-    base_url="http://localhost:8000",  # or your deployed ClueState instance URL
-)
-
-# 1. Ingest a customer interaction
-response = client.ingest(
-    external_id="cust_402",
-    entity_name="Marcus Vance",
-    content="We migrated our primary database to PostgreSQL and set our Q4 budget to $25,000.",
-    source_type="support_ticket",
-    idempotency_key="evt_ticket_8841",
-)
-
-# 2. Retrieve verified customer state
-intel = client.get_intel("cust_402")
-print(intel.formatted_prompt)
+async with AsyncClueState(api_key="cs_live_...") as cs:
+    await cs.ingest(external_id="cust_402", content="Requires EU database hosting.", source_type="conversation")
+    intel = await cs.get_intel("cust_402")
 ```
 
-**Option B — Full Platform Distribution (`cluestate`):**
+### TypeScript / JavaScript ([`docs/typescript-sdk.md`](docs/typescript-sdk.md) · [`examples/typescript_quickstart.ts`](examples/typescript_quickstart.ts))
 
-```bash
-pip install cluestate
-```
-
-```python
-from cluestate import ClueState, AsyncClueState
-```
-
-See the [Python SDK Reference](docs/python-sdk.md) and [`examples/python_quickstart.py`](examples/python_quickstart.py).
-
-### TypeScript / JavaScript SDK ([Documentation](docs/typescript-sdk.md) · [`sdks/typescript`](sdks/typescript))
-
-Zero runtime dependencies. Runs natively in Node.js 18+, Bun, Deno, Cloudflare Workers, and Vercel Edge:
+Zero runtime dependencies. Built on standard `fetch` for Node.js 18+, Bun, Deno, Cloudflare Workers, and Vercel Edge:
 
 ```bash
 npm install @cluestate/sdk
@@ -238,89 +237,15 @@ npm install @cluestate/sdk
 ```typescript
 import { ClueState } from "@cluestate/sdk";
 
-const cluestate = new ClueState({
-  apiKey: process.env.CLUESTATE_API_KEY!,
-  baseUrl: "http://localhost:8000", // or your deployed ClueState instance URL
-});
-
-// 1. Ingest an interaction
-await cluestate.ingest({
-  externalId: "cust_402",
-  entityName: "Marcus Vance",
-  content: "We migrated our primary database to PostgreSQL and set our Q4 budget to $25,000.",
-  sourceType: "support_ticket",
-  idempotencyKey: "evt_ticket_8841",
-});
-
-// 2. Retrieve verified customer state
-const intel = await cluestate.getIntel({ externalId: "cust_402" });
-console.log(intel.formatted_prompt);
+const cs = new ClueState({ apiKey: process.env.CLUESTATE_API_KEY! });
+const intel = await cs.getIntel("cust_402");
 ```
-
-See the [TypeScript SDK Reference](docs/typescript-sdk.md) and [`examples/typescript_quickstart.ts`](examples/typescript_quickstart.ts).
-
----
-
-## Installation & Self-Hosting
-
-### Option 1: Docker Compose (PostgreSQL + API + Platform UI)
-
-```bash
-git clone https://github.com/cluestate/cluestate.git
-cd cluestate
-
-cp .env.example .env
-# Edit .env to set OPENAI_API_KEY, POSTGRES_PASSWORD, and SECRET_KEY (required)
-
-docker compose up -d --build
-```
-
-Open `http://localhost:8000` to create your workspace account and generate a `cs_live_...` API key. Database migrations run automatically via Alembic on startup (`cluestate migrate`).
-
-### Option 2: Local Python Installation (SQLite or PostgreSQL)
-
-Requires Python 3.11+ and Node.js 20+ (to build the frontend assets):
-
-```bash
-git clone https://github.com/cluestate/cluestate.git
-cd cluestate
-
-# 1. Build the React platform UI
-cd admin && npm install && npm run build && cd ..
-
-# 2. Install the Python package in a virtual environment
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .\.venv\Scripts\activate
-pip install -e ".[postgres,dev]"
-
-# 3. Configure environment and start the server
-cp .env.example .env
-cluestate serve
-```
-
-- **Platform UI:** `http://localhost:8000`
-- **OpenAPI / Swagger Docs:** `http://localhost:8000/docs`
-- **Health Check:** `http://localhost:8000/api/health`
-
----
-
-## Authentication & Security
-
-All `/api/*` endpoints (except `/api/health`, `/api/auth/signup`, and `/api/auth/login`) require authentication via the HTTP `Authorization` header:
-
-```http
-Authorization: Bearer cs_live_YOUR_WORKSPACE_API_KEY
-```
-
-1. **Workspace Accounts & JWTs:** Sign up in the web UI (`/api/auth/signup`) to create an isolated workspace. Interactive browser sessions authenticate with HMAC-SHA256 signed JWTs, which are required for user and API-key administration (`/api/auth/api-keys`).
-2. **Privilege-Separated API Keys (`cs_live_...`):** Generate and revoke per-workspace API keys in the **API & Settings** tab. Keys are stored as SHA-256 hashes, scoped to data-plane operations within their workspace, and explicitly blocked (`403 Forbidden`) from minting or revoking keys.
-3. **Static Master Key (Optional):** For single-tenant CLI automation, you can set `API_KEY` in `.env` to authenticate data-plane requests against the default workspace.
 
 ---
 
 ## Model Context Protocol (MCP) Server
 
-ClueState includes an MCP server that works either directly against a local database or against a remote ClueState API instance (`https://app.cluestate.com` or self-hosted).
+Give Claude Desktop, Cursor, Windsurf, or multi-agent systems shared, evidence-backed customer state over `stdio`, `sse`, or `streamable-http`—pointed either at a local DB or a remote ClueState instance (`https://app.cluestate.com` or self-hosted).
 
 ```json
 {
@@ -329,7 +254,7 @@ ClueState includes an MCP server that works either directly against a local data
       "command": "cluestate",
       "args": ["mcp"],
       "env": {
-        "CLUESTATE_API_URL": "https://app.cluestate.com",
+        "CLUESTATE_API_URL": "http://localhost:8000",
         "CLUESTATE_API_KEY": "cs_live_your_key_here"
       }
     }
@@ -337,42 +262,74 @@ ClueState includes an MCP server that works either directly against a local data
 }
 ```
 
-| Tool / Resource | Type | Description |
-|:---|:---:|:---|
-| `cluestate_ingest` | Tool | Ingest an interaction and extract claims with verified evidence |
-| `cluestate_get_intel` | Tool | Retrieve the structured customer state summary for an entity |
-| `cluestate_list_memories` | Tool | List claims for an entity with confidence, status, and verified quotes |
-| `cluestate_search_entities` | Tool | Search entities by name or external ID |
-| `cluestate_forget` | Tool | Delete a specific claim and its linked evidence by ID |
-| `cluestate://entities/{external_id}` | Resource | Entity state context resource |
+| Tool / Resource | Type | Purpose |
+| :--- | :---: | :--- |
+| `cluestate_ingest` | Tool | Ingest interaction text and extract verified, resolved claims |
+| `cluestate_get_intel` | Tool | Retrieve formatted structured state for an entity by `external_id` |
+| `cluestate_list_memories` | Tool | Inspect claims with confidence, status, and verbatim quotes |
+| `cluestate_search_entities` | Tool | Search tracked entities by name or `external_id` |
+| `cluestate_forget` | Tool | Permanently delete a claim, its evidence, and orphaned episodes |
+| `cluestate://entities/{external_id}` | Resource | Direct entity state context resource |
 
 ---
 
-## Configuration
+## Self-Hosting, CLI & Configuration
 
-ClueState uses [LiteLLM](https://docs.litellm.ai/) and supports OpenAI, Anthropic, Google Gemini, or local Ollama models via environment variables:
+### Local Development (API + React Admin UI)
+
+Requires Python 3.11+ and Node.js 20+:
+
+```bash
+git clone https://github.com/cluestate/cluestate.git && cd cluestate
+
+cd admin && npm install && npm run build && cd ..
+python -m venv .venv && source .venv/bin/activate  # Windows: .\.venv\Scripts\activate
+pip install -e ".[postgres,dev]"
+
+cp .env.example .env
+cluestate serve
+```
+
+- **Platform UI:** `http://127.0.0.1:8000`
+- **Swagger / OpenAPI Docs:** `http://127.0.0.1:8000/docs`
+- **Health Check:** `http://127.0.0.1:8000/api/health`
+
+### CLI Reference
+
+| Command | Description |
+| :--- | :--- |
+| `cluestate serve` | Start the FastAPI server (`--host`, `--port`, `--reload`) |
+| `cluestate init` | Initialize or migrate the database to the latest schema |
+| `cluestate migrate` | Run Alembic migrations up to `head` |
+| `cluestate check` | Verify database URL, LLM key configuration, and auth mode |
+| `cluestate mcp` | Start the MCP server (`--transport stdio \| sse \| streamable-http`) |
+
+### Environment Variables
+
+ClueState uses [LiteLLM](https://docs.litellm.ai/) (OpenAI, Anthropic, Gemini, Mistral, Ollama):
 
 | Variable | Default | Description |
-|:---|:---|:---|
-| `LLM_MODEL` | `openai/gpt-4o-mini` | LiteLLM model identifier |
-| `OPENAI_API_KEY` | — | API key for OpenAI (or `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`) |
-| `DATABASE_URL` | `sqlite+aiosqlite:///./cluestate.db` | Async SQLAlchemy database URL |
-| `SECRET_KEY` | *(auto-generated)* | Secret key for signing JWT session tokens |
-| `CORS_ORIGINS` | `*` | Allowed CORS origins (`*` for all client apps, or comma-separated domains) |
+| :--- | :--- | :--- |
+| `LLM_MODEL` | `openai/gpt-4o-mini` | LiteLLM model identifier (e.g., `anthropic/...`, `gemini/...`, `ollama/...`) |
+| `OPENAI_API_KEY` | — | Provider key (or `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `MISTRAL_API_KEY`) |
+| `DATABASE_URL` | `sqlite+aiosqlite:///./cluestate.db` | Async SQLAlchemy URL (`postgresql+psycopg://...` for Postgres) |
+| `HOST` / `PORT` | `127.0.0.1` / `8000` | Server bind address and port |
+| `SECRET_KEY` | *(persisted to `.cluestate_secret`)* | Signing secret for HMAC-SHA256 JWT sessions |
+| `ALLOW_SIGNUP` | `false` | Restricts public signups after initial workspace setup |
+| `CORS_ORIGINS` | `*` | Allowed CORS origins (`*` or comma-separated URLs) |
 
 ---
 
 ## Documentation & Community
 
-- **[System Architecture & State Resolution Engine](docs/architecture.md)** — Deep dive into topic schemas, cardinality, evidence verification, and workspace isolation.
-- **[Python SDK Documentation](docs/python-sdk.md)** — Sync (`ClueState`) and async (`AsyncClueState`) client reference.
-- **[TypeScript / JS SDK Documentation](docs/typescript-sdk.md)** — `@cluestate/sdk` client reference for Node.js, Bun, Deno, and Edge runtimes.
-- **[Contributing Guide](CONTRIBUTING.md)** — Development setup, testing, and pull request workflow.
-- **[Security Policy](SECURITY.md)** — Vulnerability reporting and security architecture.
-- **[Changelog](CHANGELOG.md)** — Release history.
+- **Homepage & Cloud:** [cluestate.com](https://cluestate.com)
+- **System Architecture:** [docs/architecture.md](docs/architecture.md)
+- **Python SDK Reference:** [docs/python-sdk.md](docs/python-sdk.md)
+- **TypeScript SDK Reference:** [docs/typescript-sdk.md](docs/typescript-sdk.md)
+- **Contributing:** [CONTRIBUTING.md](CONTRIBUTING.md) · **Security:** [SECURITY.md](SECURITY.md) · **Changelog:** [CHANGELOG.md](CHANGELOG.md)
 
----
+If ClueState helps you ship more reliable AI agents or customer software, **please consider starring the repository** to support open-source development.
 
 ## License
 
-Apache 2.0 — see [LICENSE](LICENSE) for details.
+Apache 2.0 — see [LICENSE](LICENSE).

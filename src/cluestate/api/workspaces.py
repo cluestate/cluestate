@@ -12,11 +12,21 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_session
+from ..engine import compute_content_hash, verify_evidence_excerpt
 from ..models import (
     DEFAULT_EXTRACTION_POLICY,
     DEFAULT_SOURCE_TYPES,
     ApiKey,
+    ClaimType,
+    Entity,
+    EntityType,
+    Episode,
+    Evidence,
+    Memory,
+    MemoryStatus,
     Topic,
+    TopicCardinality,
+    UpdatePolicy,
     User,
     Workspace,
     WorkspaceInvite,
@@ -25,6 +35,7 @@ from ..models import (
     normalize_extraction_policy,
 )
 from ..schemas import (
+    DemoSeedRequest,
     WorkspaceCreate,
     WorkspaceInviteCreate,
     WorkspaceInviteRead,
@@ -505,3 +516,407 @@ async def revoke_workspace_invite(
 
     await session.delete(invite)
     await session.commit()
+
+
+# ──────────────────────────────────────────────
+# 1-Click Sample Workspace Seeder (Zero LLM Cost)
+# ──────────────────────────────────────────────
+
+_DEMO_PRESETS: dict[str, dict[str, Any]] = {
+    "clinical": {
+        "topics": [
+            {
+                "name": "known_allergies",
+                "label": "Known Allergies",
+                "description": "Documented drug, food, or environmental allergies.",
+                "extraction_instructions": "Extract only explicitly stated allergies. Never infer from dietary preferences.",
+                "data_type": "list",
+                "cardinality": TopicCardinality.MULTIPLE,
+                "update_policy": UpdatePolicy.REVIEW,
+                "enum_values": ["penicillin", "peanuts", "tree_nuts", "latex", "shellfish", "nsaid"],
+                "allow_custom_values": True,
+                "allow_inferred": False,
+                "applies_to_entity_types": ["person"],
+            },
+            {
+                "name": "is_vegan",
+                "label": "Vegan Diet",
+                "description": "Whether the patient follows a strictly plant-based vegan diet.",
+                "extraction_instructions": "Set true ONLY when explicitly stated. Do not infer from ordering a single plant-based meal.",
+                "data_type": "boolean",
+                "cardinality": TopicCardinality.SINGLE,
+                "update_policy": UpdatePolicy.REPLACE,
+                "allow_inferred": False,
+                "applies_to_entity_types": ["person"],
+            },
+            {
+                "name": "preferred_contact_method",
+                "label": "Preferred Contact Method",
+                "description": "Preferred channel for lab results and appointment reminders.",
+                "extraction_instructions": "Capture preferred patient communication channel.",
+                "data_type": "enum",
+                "cardinality": TopicCardinality.SINGLE,
+                "update_policy": UpdatePolicy.REPLACE,
+                "enum_values": ["sms", "phone_call", "email", "patient_portal"],
+                "allow_custom_values": True,
+            },
+        ],
+        "entities": [
+            {
+                "external_id": "patient_clara_409",
+                "name": "Clara Lindqvist",
+                "entity_type": EntityType.PERSON,
+                "episode_source_type": "note",
+                "episode_desc": "Annual Preventive Consultation — Dr. Helena Novak",
+                "episode_content": (
+                    "Physician Intake Note (Dr. Helena Novak):\n"
+                    "Patient Clara Lindqvist (34F) presents for annual preventive evaluation. "
+                    "She states she has followed a strictly vegan diet for the past 5 years (no meat, dairy, or eggs). "
+                    "Documented drug allergy to Penicillin (hives reaction in 2021) and food allergy to tree nuts. "
+                    "She requests all lab results and appointment reminders strictly via SMS rather than phone calls."
+                ),
+                "memories": [
+                    {
+                        "topic": "known_allergies",
+                        "claim": "Documented drug allergy to Penicillin (hives reaction)",
+                        "value": "penicillin",
+                        "structured_value": ["penicillin"],
+                        "status": MemoryStatus.CONFIRMED,
+                        "confidence": 0.98,
+                        "excerpt": "Documented drug allergy to Penicillin (hives reaction in 2021)",
+                    },
+                    {
+                        "topic": "known_allergies",
+                        "claim": "Documented food allergy to tree nuts",
+                        "value": "tree_nuts",
+                        "structured_value": ["tree_nuts"],
+                        "status": MemoryStatus.PENDING_REVIEW,
+                        "confidence": 0.94,
+                        "judge_note": "High-stakes clinical allergy tag requires clinician sign-off before entering active chart state.",
+                        "excerpt": "food allergy to tree nuts",
+                    },
+                    {
+                        "topic": "is_vegan",
+                        "claim": "Follows a strictly vegan diet for the past 5 years",
+                        "value": "true",
+                        "structured_value": True,
+                        "status": MemoryStatus.ACTIVE,
+                        "confidence": 0.97,
+                        "excerpt": "followed a strictly vegan diet for the past 5 years",
+                    },
+                    {
+                        "topic": "preferred_contact_method",
+                        "claim": "Prefers SMS for lab results and appointment reminders",
+                        "value": "sms",
+                        "structured_value": "sms",
+                        "status": MemoryStatus.ACTIVE,
+                        "confidence": 0.96,
+                        "excerpt": "requests all lab results and appointment reminders strictly via SMS",
+                    },
+                ],
+            },
+            {
+                "external_id": "patient_viktor_108",
+                "name": "Viktor Kovac",
+                "entity_type": EntityType.PERSON,
+                "episode_source_type": "conversation",
+                "episode_desc": "Cardiology Follow-up Intake Call",
+                "episode_content": (
+                    "Nurse: Hi Viktor, confirming your chart before Thursday's lab draw. Any allergies we should flag?\n"
+                    "Viktor: Yes, I react badly to latex gloves and NSAIDs. Not vegan — I eat fish and poultry regularly. "
+                    "Please send my lab summary through the patient portal."
+                ),
+                "memories": [
+                    {
+                        "topic": "known_allergies",
+                        "claim": "Allergic reaction to latex",
+                        "value": "latex",
+                        "structured_value": ["latex"],
+                        "status": MemoryStatus.CONFIRMED,
+                        "confidence": 0.96,
+                        "excerpt": "I react badly to latex gloves and NSAIDs.",
+                    },
+                    {
+                        "topic": "is_vegan",
+                        "claim": "Does not follow a vegan diet (eats fish and poultry)",
+                        "value": "false",
+                        "structured_value": False,
+                        "status": MemoryStatus.ACTIVE,
+                        "confidence": 0.95,
+                        "excerpt": "Not vegan — I eat fish and poultry regularly.",
+                    },
+                    {
+                        "topic": "preferred_contact_method",
+                        "claim": "Prefers patient portal for lab summaries",
+                        "value": "patient_portal",
+                        "structured_value": "patient_portal",
+                        "status": MemoryStatus.ACTIVE,
+                        "confidence": 0.94,
+                        "excerpt": "send my lab summary through the patient portal",
+                    },
+                ],
+            },
+        ],
+    },
+    "saas": {
+        "topics": [
+            {
+                "name": "annual_budget",
+                "label": "Annual Budget (USD)",
+                "description": "Approved annual software or project spend target.",
+                "extraction_instructions": "Extract concrete stated budget amounts. Ignore hypothetical pricing questions.",
+                "data_type": "number",
+                "cardinality": TopicCardinality.SINGLE,
+                "update_policy": UpdatePolicy.REPLACE,
+                "constraints": {"unit": "USD", "min": 0},
+            },
+            {
+                "name": "tech_stack",
+                "label": "Technology Stack",
+                "description": "Databases, cloud providers, and core frameworks actively used.",
+                "extraction_instructions": "Record technologies currently in production.",
+                "data_type": "list",
+                "cardinality": TopicCardinality.MULTIPLE,
+                "update_policy": UpdatePolicy.APPEND,
+            },
+            {
+                "name": "renewal_date",
+                "label": "Renewal / Target Date",
+                "description": "Contract renewal or migration deadline (YYYY-MM-DD).",
+                "extraction_instructions": "Normalize explicit renewal dates to ISO YYYY-MM-DD.",
+                "data_type": "date",
+                "cardinality": TopicCardinality.SINGLE,
+                "update_policy": UpdatePolicy.REPLACE,
+            },
+            {
+                "name": "security_requirements",
+                "label": "Security & Compliance",
+                "description": "Data residency, SOC2, HIPAA, or SSO requirements.",
+                "extraction_instructions": "Capture explicit compliance or hosting requirements.",
+                "data_type": "list",
+                "cardinality": TopicCardinality.MULTIPLE,
+                "update_policy": UpdatePolicy.REVIEW,
+            },
+        ],
+        "entities": [
+            {
+                "external_id": "account_sarah_j",
+                "name": "Sarah Jenkins (Northstar Labs)",
+                "entity_type": EntityType.PERSON,
+                "episode_source_type": "conversation",
+                "episode_desc": "Q4 Architecture & Budget Review",
+                "episode_content": (
+                    "AE: Sarah, can you confirm your current stack and approved budget envelope?\n"
+                    "Sarah: We migrated from MySQL to PostgreSQL and Redis on AWS ECS with FastAPI. "
+                    "Our VP of Engineering signed off on an annual budget of $60,000, and we must complete rollout before 2026-12-15. "
+                    "Also, EU data residency in Frankfurt is mandatory for our German enterprise clients."
+                ),
+                "memories": [
+                    {
+                        "topic": "annual_budget",
+                        "claim": "Approved annual software budget of $60,000",
+                        "value": "60000",
+                        "structured_value": 60000,
+                        "status": MemoryStatus.CONFIRMED,
+                        "confidence": 0.97,
+                        "excerpt": "signed off on an annual budget of $60,000",
+                    },
+                    {
+                        "topic": "tech_stack",
+                        "claim": "Runs PostgreSQL as primary database",
+                        "value": "PostgreSQL",
+                        "structured_value": ["PostgreSQL"],
+                        "status": MemoryStatus.ACTIVE,
+                        "confidence": 0.96,
+                        "excerpt": "migrated from MySQL to PostgreSQL and Redis on AWS ECS with FastAPI",
+                    },
+                    {
+                        "topic": "renewal_date",
+                        "claim": "Must complete rollout before 2026-12-15",
+                        "value": "2026-12-15",
+                        "structured_value": "2026-12-15",
+                        "status": MemoryStatus.ACTIVE,
+                        "confidence": 0.95,
+                        "excerpt": "must complete rollout before 2026-12-15",
+                    },
+                    {
+                        "topic": "security_requirements",
+                        "claim": "Requires EU data residency in Frankfurt",
+                        "value": "EU Frankfurt Data Residency",
+                        "structured_value": ["EU Frankfurt Data Residency"],
+                        "status": MemoryStatus.PENDING_REVIEW,
+                        "confidence": 0.93,
+                        "judge_note": "Security & compliance requirement flagged for solutions architect approval.",
+                        "excerpt": "EU data residency in Frankfurt is mandatory for our German enterprise clients",
+                    },
+                ],
+            },
+            {
+                "external_id": "account_marcus_v",
+                "name": "Marcus Vance (Helios Freight)",
+                "entity_type": EntityType.PERSON,
+                "episode_source_type": "support_ticket",
+                "episode_desc": "Ticket #8841 — Enterprise Tier Upgrade",
+                "episode_content": (
+                    "Marcus Vance: Our ops platform runs on TypeScript and PostgreSQL. "
+                    "Finance approved $25,000/yr for the customer memory tier starting next month."
+                ),
+                "memories": [
+                    {
+                        "topic": "annual_budget",
+                        "claim": "Finance approved $25,000/yr budget",
+                        "value": "25000",
+                        "structured_value": 25000,
+                        "status": MemoryStatus.ACTIVE,
+                        "confidence": 0.96,
+                        "excerpt": "Finance approved $25,000/yr",
+                    },
+                    {
+                        "topic": "tech_stack",
+                        "claim": "Ops platform runs on TypeScript and PostgreSQL",
+                        "value": "TypeScript",
+                        "structured_value": ["TypeScript", "PostgreSQL"],
+                        "status": MemoryStatus.ACTIVE,
+                        "confidence": 0.95,
+                        "excerpt": "ops platform runs on TypeScript and PostgreSQL",
+                    },
+                ],
+            },
+        ],
+    },
+}
+
+
+@router.post("/current/seed-demo", status_code=201)
+async def seed_demo_workspace(
+    body: DemoSeedRequest,
+    workspace: Workspace = Depends(get_current_workspace),
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    Deterministically populate the current workspace with a realistic Clinical or SaaS
+    sample dataset (topics, profiles, verified character-offset evidence, and 1 review item)
+    with zero LLM cost. Idempotent per topic name and entity external_id.
+    """
+    preset_key = body.preset.strip().lower()
+    if preset_key not in _DEMO_PRESETS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown preset '{body.preset}'. Choose 'clinical' or 'saas'.",
+        )
+
+    spec = _DEMO_PRESETS[preset_key]
+    now = datetime.now(timezone.utc)
+
+    # 1. Ensure topics exist
+    existing_topics_res = await session.execute(
+        select(Topic).where(Topic.workspace_id == workspace.id)
+    )
+    topics_by_name = {t.name.lower(): t for t in existing_topics_res.scalars().all()}
+    topics_created = 0
+
+    for t_def in spec["topics"]:
+        if t_def["name"].lower() not in topics_by_name:
+            t = Topic(
+                workspace_id=workspace.id,
+                name=t_def["name"],
+                label=t_def.get("label", ""),
+                description=t_def.get("description", ""),
+                extraction_instructions=t_def.get("extraction_instructions", ""),
+                data_type=t_def.get("data_type", "text"),
+                cardinality=t_def.get("cardinality", TopicCardinality.MULTIPLE),
+                update_policy=t_def.get("update_policy", UpdatePolicy.APPEND),
+                enum_values=t_def.get("enum_values", []),
+                allow_custom_values=t_def.get("allow_custom_values", False),
+                allow_inferred=t_def.get("allow_inferred", True),
+                constraints=t_def.get("constraints", {}),
+                applies_to_entity_types=t_def.get("applies_to_entity_types", []),
+            )
+            session.add(t)
+            await session.flush()
+            topics_by_name[t.name.lower()] = t
+            topics_created += 1
+
+    # 2. Seed entities, episodes, memories, and character-verified evidence
+    entities_created = 0
+    memories_created = 0
+
+    for e_def in spec["entities"]:
+        existing_ent_res = await session.execute(
+            select(Entity).where(
+                Entity.workspace_id == workspace.id,
+                Entity.external_id == e_def["external_id"],
+            )
+        )
+        if existing_ent_res.scalars().first():
+            continue
+
+        entity = Entity(
+            workspace_id=workspace.id,
+            external_id=e_def["external_id"],
+            name=e_def["name"],
+            entity_type=e_def["entity_type"],
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(entity)
+        await session.flush()
+        entities_created += 1
+
+        content = e_def["episode_content"]
+        content_hash = compute_content_hash(content)
+        episode = Episode(
+            workspace_id=workspace.id,
+            entity_id=entity.id,
+            source_type=e_def["episode_source_type"],
+            content=content,
+            content_hash=content_hash,
+            source_description=e_def["episode_desc"],
+            occurred_at=now,
+            created_at=now,
+        )
+        session.add(episode)
+        await session.flush()
+
+        for m_def in e_def["memories"]:
+            topic = topics_by_name.get(m_def["topic"].lower())
+            excerpt = m_def["excerpt"]
+            is_verified, char_start, char_end = verify_evidence_excerpt(content, excerpt)
+            mem = Memory(
+                workspace_id=workspace.id,
+                entity_id=entity.id,
+                topic_id=topic.id if topic else None,
+                claim=m_def["claim"],
+                value=m_def["value"],
+                structured_value=m_def["structured_value"],
+                claim_type=ClaimType.EXPLICIT,
+                confidence=m_def["confidence"],
+                status=m_def["status"],
+                judge_note=m_def.get("judge_note"),
+                valid_from=now,
+                created_at=now,
+                updated_at=now,
+            )
+            session.add(mem)
+            await session.flush()
+            memories_created += 1
+
+            session.add(
+                Evidence(
+                    memory_id=mem.id,
+                    episode_id=episode.id,
+                    excerpt=excerpt,
+                    is_verified=is_verified,
+                    char_start=char_start,
+                    char_end=char_end,
+                    content_hash=content_hash,
+                )
+            )
+
+    await session.commit()
+    return {
+        "preset": preset_key,
+        "topics_created": topics_created,
+        "entities_created": entities_created,
+        "memories_created": memories_created,
+    }

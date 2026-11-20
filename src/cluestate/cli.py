@@ -66,18 +66,20 @@ def check():
     settings = get_settings()
 
     click.echo(f"ClueState v{__version__}")
-    click.echo(f"  Database:  {settings.database_url}")
-    click.echo(f"  LLM Model: {settings.llm_model}")
-    click.echo(f"  Host:      {settings.host}:{settings.port}")
+    click.echo(f"  Database:    {settings.database_url}")
+    click.echo(f"  LLM Model:   {settings.resolved_llm_model}")
+    if settings.judge_model:
+        click.echo(f"  Judge Model: {settings.resolved_judge_model}")
+    click.echo(f"  Host:        {settings.host}:{settings.port}")
     auth_mode = (
         "Workspace Auth + Static Master Key"
         if settings.api_key
         else "Workspace Auth (JWT + cs_live_ API keys enforced)"
     )
-    click.echo(f"  Auth Mode: {auth_mode}")
+    click.echo(f"  Auth Mode:   {auth_mode}")
 
     # Check LLM key
-    model_prefix = settings.llm_model.split("/")[0] if "/" in settings.llm_model else ""
+    model_prefix = settings.resolved_llm_model.split("/")[0] if "/" in settings.resolved_llm_model else ""
     if model_prefix == "openai" and not settings.openai_api_key:
         click.secho("  [!] OPENAI_API_KEY not set", fg="yellow")
     elif model_prefix == "anthropic" and not settings.anthropic_api_key:

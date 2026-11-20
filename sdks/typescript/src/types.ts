@@ -62,6 +62,7 @@ export interface Memory {
   claim_type: ClaimType;
   confidence: number;
   status: MemoryStatus;
+  judge_note?: string | null;
   superseded_by_id: number | null;
   valid_from: string | null;
   valid_to: string | null;
@@ -79,6 +80,7 @@ export interface Entity {
   created_at: string;
   updated_at: string;
   memory_count: number;
+  state?: Record<string, unknown>;
   memories?: Memory[];
 }
 
@@ -139,6 +141,15 @@ export interface IngestParams {
   meta?: Record<string, unknown>;
   autoCreateEntity?: boolean;
   auto_create_entity?: boolean;
+  dryRun?: boolean;
+  dry_run?: boolean;
+}
+
+export interface JudgeRejectedItem {
+  claim: string;
+  topic_name?: string | null;
+  value: string;
+  reason: string;
 }
 
 export interface IngestResponse {
@@ -149,6 +160,8 @@ export interface IngestResponse {
   memories_new: number;
   idempotent_replay: boolean;
   dry_run?: boolean;
+  judge_applied?: boolean;
+  judge_rejected?: JudgeRejectedItem[];
   state?: Record<string, unknown>;
   memories: Memory[];
 }
@@ -177,6 +190,7 @@ export interface ListEntitiesParams {
   search?: string;
   limit?: number;
   offset?: number;
+  where?: string[];
 }
 
 export interface ListMemoriesParams {
@@ -192,27 +206,57 @@ export interface UpdateMemoryParams {
 
 export interface CreateTopicParams {
   name: string;
+  label?: string;
   description?: string;
-  dataType?: 'text' | 'number' | 'boolean' | 'enum' | 'list' | string;
-  data_type?: 'text' | 'number' | 'boolean' | 'enum' | 'list' | string;
+  extractionInstructions?: string;
+  extraction_instructions?: string;
+  examples?: unknown[];
+  dataType?: 'text' | 'number' | 'boolean' | 'enum' | 'list' | 'single_select' | 'multi_select' | 'date' | string;
+  data_type?: 'text' | 'number' | 'boolean' | 'enum' | 'list' | 'single_select' | 'multi_select' | 'date' | string;
   cardinality?: TopicCardinality;
   updatePolicy?: UpdatePolicy;
   update_policy?: UpdatePolicy;
   temporal?: boolean;
+  ttlDays?: number | null;
+  ttl_days?: number | null;
   enumValues?: string[];
   enum_values?: string[];
+  allowCustomValues?: boolean;
+  allow_custom_values?: boolean;
+  allowInferred?: boolean;
+  allow_inferred?: boolean;
+  minConfidence?: number;
+  min_confidence?: number;
+  constraints?: Record<string, unknown>;
+  appliesToEntityTypes?: string[];
+  applies_to_entity_types?: string[];
 }
 
 export interface UpdateTopicParams {
+  label?: string;
   description?: string;
+  extractionInstructions?: string;
+  extraction_instructions?: string;
+  examples?: unknown[];
   dataType?: string;
   data_type?: string;
   cardinality?: TopicCardinality;
   updatePolicy?: UpdatePolicy;
   update_policy?: UpdatePolicy;
   temporal?: boolean;
+  ttlDays?: number | null;
+  ttl_days?: number | null;
   enumValues?: string[];
   enum_values?: string[];
+  allowCustomValues?: boolean;
+  allow_custom_values?: boolean;
+  allowInferred?: boolean;
+  allow_inferred?: boolean;
+  minConfidence?: number;
+  min_confidence?: number;
+  constraints?: Record<string, unknown>;
+  appliesToEntityTypes?: string[];
+  applies_to_entity_types?: string[];
   isActive?: boolean;
   is_active?: boolean;
 }

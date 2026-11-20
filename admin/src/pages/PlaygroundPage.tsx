@@ -343,10 +343,15 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
 
         {/* Right Column: Live Extraction Results on Cool Ice Plane */}
         <div className="inspector-plane">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-            <h3 className="card-title" style={{ margin: 0 }}>
-              Extraction &amp; Schema Resolution Output
-            </h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <h3 className="card-title" style={{ margin: 0 }}>
+                Extraction &amp; Schema Resolution Output
+              </h3>
+              {result?.judge_applied && (
+                <span className="badge badge-info">CRITIC AUDITED</span>
+              )}
+            </div>
 
             {result && !result.dry_run && result.entity_id > 0 && (
               <button
@@ -479,10 +484,63 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
                           &ldquo;{ev.excerpt}&rdquo;
                         </div>
                       )}
+
+                      {mem.judge_note && (
+                        <div
+                          className="mono"
+                          style={{
+                            marginTop: '6px',
+                            fontSize: '11px',
+                            color: mem.status === 'pending_review' ? 'var(--signal-red)' : 'var(--ultramarine)',
+                          }}
+                        >
+                          CRITIC NOTE · {mem.judge_note}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
               </div>
+
+              {/* Rejected by Critic / Judge */}
+              {result.judge_rejected && result.judge_rejected.length > 0 && (
+                <div style={{ marginTop: '18px' }}>
+                  <div
+                    className="mono"
+                    style={{
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      color: 'var(--signal-red)',
+                      marginBottom: '8px',
+                      textTransform: 'uppercase',
+                    }}
+                  >
+                    Blocked by Adversarial Critic ({result.judge_rejected.length})
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {result.judge_rejected.map((rej, rIdx) => (
+                      <div
+                        key={rIdx}
+                        className="signal-strip danger"
+                        style={{ background: '#FFFFFF' }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', marginBottom: '4px' }}>
+                          <span className="tag-pill">{rej.topic_name || 'open_discovery'}</span>
+                          <span className="badge badge-danger">REJECTED BY CRITIC</span>
+                        </div>
+                        <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', textDecoration: 'line-through' }}>
+                          {rej.claim}
+                        </div>
+                        {rej.reason && (
+                          <div className="mono" style={{ marginTop: '4px', fontSize: '11.5px', color: 'var(--signal-red)' }}>
+                            {rej.reason}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div className="empty-state" style={{ padding: '64px 20px' }}>

@@ -156,11 +156,11 @@ class EntityRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     memory_count: int = 0
+    state: dict[str, Any] = Field(default_factory=dict)
 
 
 class EntityDetail(EntityRead):
     memories: list["MemoryRead"] = []
-    state: dict[str, Any] = Field(default_factory=dict)
 
 
 # ──────────────────────────────────────────────
@@ -245,6 +245,7 @@ class MemoryRead(BaseModel):
     claim_type: ClaimType = ClaimType.EXPLICIT
     confidence: float
     status: MemoryStatus
+    judge_note: Optional[str] = None
     superseded_by_id: Optional[int] = None
     valid_from: Optional[datetime] = None
     valid_to: Optional[datetime] = None
@@ -336,6 +337,13 @@ class SourceTypesResponse(BaseModel):
     defaults: list[str] = list(DEFAULT_SOURCE_TYPES)
 
 
+class JudgeRejectedItem(BaseModel):
+    claim: str
+    topic_name: Optional[str] = None
+    value: str = ""
+    reason: str = ""
+
+
 class IngestResponse(BaseModel):
     episode_id: int
     entity_id: int
@@ -344,8 +352,14 @@ class IngestResponse(BaseModel):
     memories_new: int
     idempotent_replay: bool = False
     dry_run: bool = False
+    judge_applied: bool = False
+    judge_rejected: list[JudgeRejectedItem] = Field(default_factory=list)
     state: dict[str, Any] = Field(default_factory=dict)
     memories: list[MemoryRead]
+
+
+class DemoSeedRequest(BaseModel):
+    preset: str = Field(default="clinical", description="Sample workspace preset: 'clinical' or 'saas'")
 
 
 # ──────────────────────────────────────────────

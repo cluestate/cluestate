@@ -12,6 +12,8 @@ export type WorkspaceRole = 'owner' | 'admin' | 'member' | 'viewer';
 
 export type DiscoveryMode = 'strict' | 'guided' | 'open';
 
+export type JudgeMode = 'off' | 'smart' | 'always';
+
 export type DefaultSourceType =
   | 'conversation'
   | 'note'
@@ -39,6 +41,8 @@ export interface ExtractionPolicy {
   discovery_review_policy: 'active' | 'pending_review';
   discovery_allow_inferred: boolean;
   discovery_max_per_episode: number;
+  judge_mode?: JudgeMode;
+  judge_model?: string;
 }
 
 export interface User {
@@ -141,6 +145,7 @@ export interface Memory {
   claim_type: ClaimType;
   confidence: number;
   status: MemoryStatus;
+  judge_note?: string | null;
   superseded_by_id?: number | null;
   valid_from?: string | null;
   valid_to?: string | null;
@@ -207,7 +212,14 @@ export interface Episode {
 export interface SystemInfo {
   version: string;
   llm_model: string;
+  judge_model?: string;
   database: string;
+}
+
+export interface WorkspaceUsage {
+  ingests_this_month: number;
+  monthly_ingest_limit: number;
+  rate_limit_per_min: number;
 }
 
 export interface DashboardStats {
@@ -251,7 +263,15 @@ export interface DashboardStats {
     count: number;
   }[];
   extraction_policy?: ExtractionPolicy;
+  usage?: WorkspaceUsage;
   system_info?: SystemInfo;
+}
+
+export interface JudgeRejectedItem {
+  claim: string;
+  topic_name?: string | null;
+  value: string;
+  reason: string;
 }
 
 export interface IntelResponse {
@@ -273,6 +293,8 @@ export interface IngestResponse {
   memories_new: number;
   idempotent_replay?: boolean;
   dry_run?: boolean;
+  judge_applied?: boolean;
+  judge_rejected?: JudgeRejectedItem[];
   state?: Record<string, any>;
   memories: Memory[];
 }

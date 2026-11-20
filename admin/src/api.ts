@@ -153,6 +153,17 @@ export const api = {
       body: JSON.stringify(policy),
     }),
 
+  seedDemoWorkspace: (preset: 'clinical' | 'saas') =>
+    request<{
+      preset: string;
+      topics_created: number;
+      entities_created: number;
+      memories_created: number;
+    }>('/workspaces/current/seed-demo', {
+      method: 'POST',
+      body: JSON.stringify({ preset }),
+    }),
+
   listWorkspaceMembers: (workspaceId: number) =>
     request<WorkspaceMember[]>(`/workspaces/${workspaceId}/members`),
 
@@ -217,10 +228,21 @@ export const api = {
   getStats: () => request<DashboardStats>('/stats'),
 
   // Entities
-  listEntities: (search: string = '', limit: number = 50, offset: number = 0) =>
-    request<Entity[]>(
-      `/entities?search=${encodeURIComponent(search)}&limit=${limit}&offset=${offset}`
-    ),
+  listEntities: (
+    search: string = '',
+    limit: number = 50,
+    offset: number = 0,
+    where: string[] = []
+  ) => {
+    const q = new URLSearchParams();
+    q.set('search', search);
+    q.set('limit', String(limit));
+    q.set('offset', String(offset));
+    for (const clause of where) {
+      if (clause && clause.trim()) q.append('where', clause.trim());
+    }
+    return request<Entity[]>(`/entities?${q.toString()}`);
+  },
 
   getEntity: (id: number) => request<Entity>(`/entities/${id}`),
 

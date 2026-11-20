@@ -11,6 +11,7 @@ import {
 import type {
   DiscoveryMode,
   ExtractionPolicy,
+  JudgeMode,
   Topic,
   TopicCardinality,
   TopicConstraints,
@@ -234,6 +235,8 @@ export const TopicsPage: React.FC<TopicsPageProps> = ({
     discovery_review_policy: 'active',
     discovery_allow_inferred: true,
     discovery_max_per_episode: 5,
+    judge_mode: 'smart',
+    judge_model: '',
   });
   const [isSavingPolicy, setIsSavingPolicy] = useState(false);
   const [policyDirty, setPolicyDirty] = useState(false);
@@ -525,6 +528,48 @@ export const TopicsPage: React.FC<TopicsPageProps> = ({
             </div>
           </div>
         )}
+
+        {/* Adversarial Verification Judge Mode */}
+        <div
+          style={{
+            marginTop: '18px',
+            paddingTop: '16px',
+            borderTop: '1px solid var(--border-subtle)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '14px',
+          }}
+        >
+          <div>
+            <div className="card-title" style={{ marginBottom: '2px' }}>
+              Adversarial Verification Judge
+            </div>
+            <div style={{ fontSize: '12.5px', color: 'var(--text-secondary)' }}>
+              Second-pass critic that catches negations (&ldquo;not vegan&rdquo;), speaker mix-ups, and bad contradictions before state updates.
+            </div>
+          </div>
+
+          <div className="segmented-control">
+            {(
+              [
+                { id: 'off' as JudgeMode, label: 'Off' },
+                { id: 'smart' as JudgeMode, label: 'Smart Escalation (Recommended)' },
+                { id: 'always' as JudgeMode, label: 'Always Audit' },
+              ]
+            ).map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                className={`segmented-option ${(policy.judge_mode || 'smart') === opt.id ? 'active' : ''}`}
+                onClick={() => updatePolicyField('judge_mode', opt.id)}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* Section 2: Defined Memory Tags Table */}

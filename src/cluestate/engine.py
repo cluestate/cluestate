@@ -7,7 +7,7 @@ import json
 import logging
 import re
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 import instructor
 import litellm
@@ -86,6 +86,35 @@ class ExtractionResult(BaseModel):
     """Structured result from the LLM extraction."""
 
     claims: list[ExtractedClaim] = Field(default_factory=list)
+
+
+class JudgeClaimVerdict(BaseModel):
+    """Adversarial critic verdict for a single candidate claim."""
+
+    claim_index: int = Field(description="0-based index of the candidate claim being audited.")
+    verdict: Literal["approve", "quarantine", "reject"] = Field(
+        description=(
+            "'approve' if accurately stated about the target entity and compliant with rules; "
+            "'quarantine' if ambiguous, weakly inferred, or needs human sign-off; "
+            "'reject' if negated, hypothetical, misattributed to the wrong speaker, or hallucinated."
+        )
+    )
+    note: str = Field(
+        default="",
+        description="Concise 1-sentence reason explaining the verdict for human reviewers.",
+    )
+    adjusted_confidence: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Optional calibrated confidence score (only set when lowering overconfident claims).",
+    )
+
+
+class JudgeResult(BaseModel):
+    """Structured output from the adversarial critic / judge stage."""
+
+    verdicts: list[JudgeClaimVerdict] = Field(default_factory=list)
 
 
 # ──────────────────────────────────────────────
@@ -415,11 +444,23 @@ async def extract_memories_from_text(
             f"{focus_line}"
         )
 
-    # Bound existing memories passed into context
-    bounded_memories = [
+    # Bound existing memories passed into context, ALWAYS retaining single-value slot memories
+    active_pool = [
         m for m in existing_memories
         if m.status in (MemoryStatus.ACTIVE, MemoryStatus.CONFIRMED)
-    ][: settings.max_context_memories]
+    ]
+    single_topic_ids = {
+        t.id for t in topics
+        if t.id is not None and (
+            t.cardinality == TopicCardinality.SINGLE
+            or t.update_policy == UpdatePolicy.REPLACE
+        )
+    }
+    pinned_single = [m for m in active_pool if m.topic_id in single_topic_ids]
+    pinned_ids = {m.id for m in pinned_single if m.id is not None}
+    other_active = [m for m in active_pool if m.id not in pinned_ids]
+    remaining_budget = max(0, settings.max_context_memories - len(pinned_single))
+    bounded_memories = pinned_single + other_active[:remaining_budget]
 
     topic_id_to_name = {t.id: t.name for t in topics if t.id is not None}
 
@@ -463,7 +504,7 @@ async def extract_memories_from_text(
 
     try:
         result = await client.chat.completions.create(
-            model=settings.llm_model,
+            model=settings.resolved_llm_model,
             response_model=ExtractionResult,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -475,6 +516,190 @@ async def extract_memories_from_text(
     except Exception as e:
         logger.error(f"LLM extraction failed: {e}")
         raise ExtractionError(f"LLM extraction failed: {e}") from e
+
+
+# ──────────────────────────────────────────────
+# Stage 3: Adversarial Critic / Judge
+# ──────────────────────────────────────────────
+
+_SPEAKER_LINE_RE = re.compile(r"(?m)^\s*[A-Z][A-Za-z0-9 ._-]{1,28}:\s+\S")
+
+
+def is_multi_speaker_transcript(content: str) -> bool:
+    """Detect dialogue transcripts with 2+ distinct speaker turns (e.g. Doctor:/Patient:, Rep:/Customer:)."""
+    if not content:
+        return False
+    matches = _SPEAKER_LINE_RE.findall(content)
+    if len(matches) < 2:
+        return False
+    speakers = {m.split(":", 1)[0].strip().lower() for m in matches}
+    return len(speakers) >= 2
+
+
+def should_escalate_to_judge(
+    content: str,
+    claims: list[ExtractedClaim],
+    topics: list[Topic],
+    extraction_policy: Optional[dict[str, Any]] = None,
+) -> tuple[bool, str]:
+    """
+    Decide whether to invoke the adversarial Critic/Judge stage based on workspace judge_mode:
+    - 'off': never invoke
+    - 'always': always invoke when candidate claims exist
+    - 'smart': invoke only when high-risk signals exist (contradictions, review-policy tags,
+      inferred claims, unverified quotes, or multi-speaker transcripts)
+    """
+    policy = normalize_extraction_policy(extraction_policy)
+    judge_mode = policy.get("judge_mode", "smart")
+
+    active_claims = [c for c in claims if c.operation != ClaimOperation.ABSTAIN]
+    if not active_claims or judge_mode == "off":
+        return False, "disabled"
+
+    if judge_mode == "always":
+        return True, "policy:always"
+
+    topic_map = {t.name.lower(): t for t in topics}
+    for c in active_claims:
+        if c.operation in (ClaimOperation.SUPERSEDE, ClaimOperation.UPDATE, ClaimOperation.CONTRADICT):
+            return True, "smart:conflict_or_update"
+        if c.claim_type == ClaimType.INFERRED:
+            return True, "smart:inferred_claim"
+        topic = topic_map.get(c.topic_name.lower()) if c.topic_name else None
+        if topic and topic.update_policy == UpdatePolicy.REVIEW:
+            return True, f"smart:review_topic:{topic.name}"
+        verified, _, _ = verify_evidence_excerpt(content, c.evidence_excerpt)
+        if not verified:
+            return True, "smart:unverified_excerpt"
+
+    if is_multi_speaker_transcript(content):
+        return True, "smart:multi_speaker_transcript"
+
+    return False, "smart:clean_verbatim_add"
+
+
+async def judge_extracted_claims(
+    content: str,
+    entity_name: str,
+    extraction: ExtractionResult,
+    existing_memories: list[Memory],
+    topics: list[Topic],
+    *,
+    extraction_policy: Optional[dict[str, Any]] = None,
+) -> tuple[ExtractionResult, dict[int, dict[str, Any]], list[dict[str, Any]], bool]:
+    """
+    Run the adversarial Critic/Judge when warranted by `should_escalate_to_judge`.
+
+    Returns:
+      - filtered_extraction: ExtractionResult with rejected claims removed
+      - decisions_by_new_idx: map from index in filtered_extraction.claims -> {"verdict", "note", "adjusted_confidence"}
+      - rejected_items: list of dicts describing claims dropped by the judge
+      - judge_applied: bool indicating whether the judge ran
+    """
+    should_run, reason = should_escalate_to_judge(
+        content=content,
+        claims=extraction.claims,
+        topics=topics,
+        extraction_policy=extraction_policy,
+    )
+    if not should_run:
+        return extraction, {}, [], False
+
+    settings = get_settings()
+    policy = normalize_extraction_policy(extraction_policy)
+    judge_model = policy.get("judge_model") or settings.resolved_judge_model
+    topic_map = {t.name.lower(): t for t in topics}
+
+    # Format candidate claims for audit
+    claim_lines = []
+    for idx, c in enumerate(extraction.claims):
+        if c.operation == ClaimOperation.ABSTAIN:
+            continue
+        t = topic_map.get(c.topic_name.lower()) if c.topic_name else None
+        t_instr = f" | Tag instructions: {t.extraction_instructions}" if (t and t.extraction_instructions) else ""
+        explicit_only = " | EXPLICIT ONLY" if (t and not getattr(t, "allow_inferred", True)) else ""
+        claim_lines.append(
+            f"[{idx}] topic={c.topic_name or 'open'} | op={c.operation.value} | type={c.claim_type.value} "
+            f"| value='{c.value}' | claim='{c.claim}' | quote='{c.evidence_excerpt}'{explicit_only}{t_instr}"
+        )
+
+    if not claim_lines:
+        return extraction, {}, [], False
+
+    existing_lines = [
+        f"- [ID:{m.id}] {m.claim} (value='{m.value}', status={m.status.value})"
+        for m in existing_memories[:30]
+        if m.status in (MemoryStatus.ACTIVE, MemoryStatus.CONFIRMED)
+    ]
+    existing_ctx = "\n".join(existing_lines) if existing_lines else "None"
+
+    system_prompt = f"""You are a strict, adversarial fact-checking auditor for an entity state database.
+Target entity: "{entity_name}"
+
+Audit each candidate claim extracted from the source text against 4 critical failure modes:
+1. NEGATION & HYPOTHETICALS: Reject claims that are negated ("not vegan", "no known allergies", "ruled out"), hypothetical ("what if budget was $50k?"), or questions.
+2. SPEAKER ATTRIBUTION: In multi-speaker dialogues, ensure the fact belongs to "{entity_name}" — NOT to a doctor, sales rep, support agent, or another person mentioned in passing.
+3. TAG INSTRUCTION COMPLIANCE: Enforce any tag-specific instructions and EXPLICIT ONLY rules strictly. If a claim violates an instruction, reject or quarantine it.
+4. CONFLICT / SUPERSEDURE VALIDITY: Verify that `supersede`/`update`/`contradict` operations genuinely replace an outdated fact rather than contradicting an unrelated memory.
+
+Verdicts:
+- `approve`: Fact is accurately supported by the text for "{entity_name}" and follows tag instructions.
+- `quarantine`: Fact might be true but is ambiguous, weakly inferred, or merits human review before activation.
+- `reject`: Fact is false, negated, hypothetical, misattributed to the wrong speaker, or clearly violates tag rules.
+
+Return one verdict per candidate claim index listed below. Keep each `note` to 1 crisp sentence.
+
+## Existing Active Memories
+{existing_ctx}
+
+## Candidate Claims to Audit
+{chr(10).join(claim_lines)}"""
+
+    client = instructor.from_litellm(litellm.acompletion)
+    logger.info(f"Escalating {len(claim_lines)} claim(s) to Judge ({judge_model}, trigger={reason})")
+
+    try:
+        judge_res = await client.chat.completions.create(
+            model=judge_model,
+            response_model=JudgeResult,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Source text:\n{content}"},
+            ],
+            max_retries=1,
+        )
+    except Exception as exc:
+        logger.warning(f"Judge stage failed ({exc}); falling back to deterministic gate")
+        return extraction, {}, [], False
+
+    verdicts_by_orig_idx: dict[int, JudgeClaimVerdict] = {
+        v.claim_index: v for v in judge_res.verdicts
+    }
+
+    kept_claims: list[ExtractedClaim] = []
+    decisions_by_new_idx: dict[int, dict[str, Any]] = {}
+    rejected_items: list[dict[str, Any]] = []
+
+    for orig_idx, claim in enumerate(extraction.claims):
+        v = verdicts_by_orig_idx.get(orig_idx)
+        if v and v.verdict == "reject":
+            rejected_items.append({
+                "claim": claim.claim,
+                "topic_name": claim.topic_name,
+                "value": claim.value,
+                "reason": v.note or "Rejected by adversarial verification judge.",
+            })
+            continue
+        new_idx = len(kept_claims)
+        kept_claims.append(claim)
+        if v:
+            decisions_by_new_idx[new_idx] = {
+                "verdict": v.verdict,
+                "note": v.note.strip() if v.note else "",
+                "adjusted_confidence": v.adjusted_confidence,
+            }
+
+    return ExtractionResult(claims=kept_claims), decisions_by_new_idx, rejected_items, True
 
 
 # ──────────────────────────────────────────────
@@ -520,6 +745,7 @@ async def process_extracted_claims(
     topics: list[Topic],
     *,
     extraction_policy: Optional[dict[str, Any]] = None,
+    judge_decisions: Optional[dict[int, dict[str, Any]]] = None,
 ) -> tuple[list[Memory], int, int]:
     """
     Validate extracted claims, verify source evidence, and apply event-time-aware
@@ -560,9 +786,14 @@ async def process_extracted_claims(
     untagged_count = 0
     affected_memories: list[Memory] = []
 
-    for claim in extraction.claims:
+    for claim_idx, claim in enumerate(extraction.claims):
         if claim.operation == ClaimOperation.ABSTAIN:
             continue
+
+        decision = (judge_decisions or {}).get(claim_idx) or {}
+        judge_verdict = decision.get("verdict")
+        judge_note: Optional[str] = decision.get("note") or None
+        judge_adj_conf = decision.get("adjusted_confidence")
 
         # 1. Resolve Topic
         topic: Optional[Topic] = None
@@ -594,12 +825,19 @@ async def process_extracted_claims(
             episode.content, claim.evidence_excerpt
         )
         effective_confidence = claim.confidence
+        if isinstance(judge_adj_conf, (int, float)):
+            effective_confidence = min(effective_confidence, float(judge_adj_conf))
         if not is_verified:
             effective_confidence = min(effective_confidence, 0.45)
 
         # 3. Enforce Topic Schema as a Strict Contract
         norm_val, structured_val, is_type_valid = validate_and_coerce_value(claim.value, topic)
         if not is_type_valid:
+            schema_note = (
+                f"Schema validation failed for #{topic.name} (expected {topic.data_type})"
+                if topic
+                else "Schema validation failed"
+            )
             # Quarantine schema-invalid values so they never pollute active state
             quarantined = Memory(
                 workspace_id=entity.workspace_id,
@@ -611,6 +849,7 @@ async def process_extracted_claims(
                 claim_type=claim.claim_type,
                 confidence=effective_confidence,
                 status=MemoryStatus.PENDING_REVIEW,
+                judge_note=judge_note or schema_note,
                 valid_from=event_time,
                 valid_to=default_valid_to,
             )
@@ -645,6 +884,8 @@ async def process_extracted_claims(
         if support_target:
             if is_verified:
                 support_target.confidence = max(support_target.confidence, effective_confidence)
+            if judge_note:
+                support_target.judge_note = judge_note
             support_target.updated_at = now
             await _attach_evidence_if_missing(
                 session, support_target.id, episode.id, claim.evidence_excerpt,
@@ -657,18 +898,21 @@ async def process_extracted_claims(
 
         # 5. Determine Target to Supersede vs. Ambiguous Multi-Valued Conflict
         memory_to_supersede: Optional[Memory] = None
-        quarantine_for_review = False
+        quarantine_for_review = judge_verdict == "quarantine"
 
         # Topic-level inference & confidence floor checks
         if topic is not None:
             if not getattr(topic, "allow_inferred", True) and claim.claim_type == ClaimType.INFERRED:
                 quarantine_for_review = True
+                judge_note = judge_note or f"Tag #{topic.name} requires explicit statements (inferred claim quarantined)."
             min_conf = float(getattr(topic, "min_confidence", 0.0) or 0.0)
             if min_conf > 0.0 and effective_confidence < min_conf:
                 quarantine_for_review = True
+                judge_note = judge_note or f"Confidence {effective_confidence:.0%} is below #{topic.name} threshold ({min_conf:.0%})."
         else:
             if discovery_review_policy == "pending_review":
                 quarantine_for_review = True
+                judge_note = judge_note or "Open discovery routed to Review Queue per workspace policy."
 
         is_single_topic = bool(
             topic and (
@@ -705,6 +949,7 @@ async def process_extracted_claims(
                 claim_type=claim.claim_type,
                 confidence=effective_confidence,
                 status=MemoryStatus.PENDING_REVIEW,
+                judge_note=judge_note,
                 valid_from=event_time,
                 valid_to=default_valid_to,
             )
@@ -726,6 +971,7 @@ async def process_extracted_claims(
                     claim_type=claim.claim_type,
                     confidence=effective_confidence,
                     status=MemoryStatus.PENDING_REVIEW,
+                    judge_note=judge_note or "Conflicting update routed to Review Queue for sign-off.",
                     valid_from=event_time,
                     valid_to=default_valid_to,
                 )
@@ -748,6 +994,7 @@ async def process_extracted_claims(
                         claim_type=claim.claim_type,
                         confidence=effective_confidence,
                         status=MemoryStatus.SUPERSEDED,
+                        judge_note=judge_note,
                         superseded_by_id=memory_to_supersede.id,
                         valid_from=event_time,
                         valid_to=existing_from,
@@ -771,6 +1018,7 @@ async def process_extracted_claims(
                         claim_type=claim.claim_type,
                         confidence=effective_confidence,
                         status=MemoryStatus.ACTIVE,
+                        judge_note=judge_note,
                         valid_from=event_time,
                         valid_to=default_valid_to,
                     )
@@ -801,6 +1049,7 @@ async def process_extracted_claims(
                 claim_type=claim.claim_type,
                 confidence=effective_confidence,
                 status=initial_status,
+                judge_note=judge_note,
                 valid_from=event_time,
                 valid_to=default_valid_to,
             )
@@ -862,6 +1111,124 @@ def compile_entity_state(
                 if val not in bucket:
                     bucket.append(val)
     return state
+
+
+_STATE_FILTER_RE = re.compile(r"^\s*([a-zA-Z0-9_\-\.]+)\s*(>=|<=|!=|=|>|<|:)\s*(.+?)\s*$")
+
+
+def parse_state_filter(expr: str) -> Optional[tuple[str, str, str]]:
+    """
+    Parse a state filter expression like:
+      - 'is_vegan:true' or 'is_vegan=true'
+      - 'known_allergies:penicillin'
+      - 'annual_budget>=25000'
+      - 'status!=churned'
+    Returns (key, operator, raw_value) or None if invalid.
+    """
+    if not expr or not isinstance(expr, str):
+        return None
+    m = _STATE_FILTER_RE.match(expr)
+    if not m:
+        return None
+    key, op, raw_val = m.group(1).strip(), m.group(2), m.group(3).strip()
+    if op == ":":
+        op = "="
+    return key, op, raw_val
+
+
+def _coerce_bool_str(val: str) -> Optional[bool]:
+    low = val.strip().lower()
+    if low in ("true", "yes", "1"):
+        return True
+    if low in ("false", "no", "0"):
+        return False
+    return None
+
+
+def matches_state_filters(state: dict[str, Any], where_clauses: list[str]) -> bool:
+    """Return True if compiled entity `state` satisfies all `where_clauses` (AND semantics)."""
+    for clause in where_clauses:
+        parsed = parse_state_filter(clause)
+        if not parsed:
+            return False
+        key, op, raw_val = parsed
+        if key not in state:
+            if op == "!=":
+                continue
+            return False
+
+        actual = state[key]
+
+        # List containment / equality
+        if isinstance(actual, list):
+            lowered_items = [str(item).strip().lower() for item in actual]
+            target_low = raw_val.strip().lower()
+            contains = target_low in lowered_items or any(target_low in item for item in lowered_items)
+            if op == "=":
+                if not contains:
+                    return False
+            elif op == "!=":
+                if contains:
+                    return False
+            else:
+                return False
+            continue
+
+        # Boolean comparison
+        if isinstance(actual, bool):
+            target_bool = _coerce_bool_str(raw_val)
+            if target_bool is None:
+                return False
+            if op == "=" and actual != target_bool:
+                return False
+            if op == "!=" and actual == target_bool:
+                return False
+            if op in (">", ">=", "<", "<="):
+                return False
+            continue
+
+        # Numeric comparison
+        if isinstance(actual, (int, float)) and not isinstance(actual, bool):
+            target_num = _parse_locale_number(raw_val)
+            if target_num is None:
+                return False
+            if op == "=" and float(actual) != float(target_num):
+                return False
+            if op == "!=" and float(actual) == float(target_num):
+                return False
+            if op == ">" and not (float(actual) > float(target_num)):
+                return False
+            if op == ">=" and not (float(actual) >= float(target_num)):
+                return False
+            if op == "<" and not (float(actual) < float(target_num)):
+                return False
+            if op == "<=" and not (float(actual) <= float(target_num)):
+                return False
+            continue
+
+        # String / ISO date comparison
+        actual_str = str(actual).strip().lower()
+        target_str = raw_val.strip().lower()
+        if op == "=":
+            if actual_str != target_str and target_str not in actual_str:
+                return False
+        elif op == "!=":
+            if actual_str == target_str:
+                return False
+        elif op == ">":
+            if not (actual_str > target_str):
+                return False
+        elif op == ">=":
+            if not (actual_str >= target_str):
+                return False
+        elif op == "<":
+            if not (actual_str < target_str):
+                return False
+        elif op == "<=":
+            if not (actual_str <= target_str):
+                return False
+
+    return True
 
 
 async def format_entity_intel(

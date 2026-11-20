@@ -20,6 +20,7 @@ export type {
   IngestParams,
   IngestResponse,
   IntelResponse,
+  JudgeRejectedItem,
   ListEntitiesParams,
   ListMemoriesParams,
   Memory,

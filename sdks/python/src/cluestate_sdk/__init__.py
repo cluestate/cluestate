@@ -72,6 +72,7 @@ class Memory(BaseModel):
     claim_type: str = "explicit"
     confidence: float
     status: str
+    judge_note: Optional[str] = None
     superseded_by_id: Optional[int] = None
     valid_from: Optional[datetime] = None
     valid_to: Optional[datetime] = None
@@ -89,6 +90,7 @@ class Entity(BaseModel):
     created_at: datetime
     updated_at: datetime
     memory_count: int = 0
+    state: dict[str, Any] = Field(default_factory=dict)
     memories: list[Memory] = Field(default_factory=list)
 
 
@@ -128,6 +130,13 @@ class Episode(BaseModel):
     created_at: datetime
 
 
+class JudgeRejectedItem(BaseModel):
+    claim: str
+    topic_name: Optional[str] = None
+    value: str = ""
+    reason: str = ""
+
+
 class IngestResponse(BaseModel):
     episode_id: int
     entity_id: int
@@ -136,6 +145,8 @@ class IngestResponse(BaseModel):
     memories_new: int
     idempotent_replay: bool = False
     dry_run: bool = False
+    judge_applied: bool = False
+    judge_rejected: list[JudgeRejectedItem] = Field(default_factory=list)
     state: dict[str, Any] = Field(default_factory=dict)
     memories: list[Memory] = Field(default_factory=list)
 
@@ -205,8 +216,17 @@ class EntitiesResource:
         )
         return Entity.model_validate(data)
 
-    def list(self, search: str = "", limit: int = 50, offset: int = 0) -> list[Entity]:
-        data = self._client._request("GET", "/entities", params={"search": search, "limit": limit, "offset": offset})
+    def list(
+        self,
+        search: str = "",
+        limit: int = 50,
+        offset: int = 0,
+        where: Optional[list[str]] = None,
+    ) -> list[Entity]:
+        params: dict[str, Any] = {"search": search, "limit": limit, "offset": offset}
+        if where:
+            params["where"] = where
+        data = self._client._request("GET", "/entities", params=params)
         return [Entity.model_validate(item) for item in data]
 
     def get(self, entity_id: int) -> Entity:
@@ -276,18 +296,37 @@ class TopicsResource:
         update_policy: UpdatePolicyLiteral = "append",
         temporal: bool = False,
         enum_values: Optional[list[str]] = None,
+        *,
+        label: str = "",
+        extraction_instructions: str = "",
+        examples: Optional[list[Any]] = None,
+        ttl_days: Optional[int] = None,
+        allow_custom_values: bool = False,
+        allow_inferred: bool = True,
+        min_confidence: float = 0.0,
+        constraints: Optional[dict[str, Any]] = None,
+        applies_to_entity_types: Optional[list[str]] = None,
     ) -> Topic:
         data = self._client._request(
             "POST",
             "/topics",
             json={
                 "name": name,
+                "label": label,
                 "description": description,
+                "extraction_instructions": extraction_instructions,
+                "examples": examples or [],
                 "data_type": data_type,
                 "cardinality": cardinality,
                 "update_policy": update_policy,
                 "temporal": temporal,
+                "ttl_days": ttl_days,
                 "enum_values": enum_values or [],
+                "allow_custom_values": allow_custom_values,
+                "allow_inferred": allow_inferred,
+                "min_confidence": min_confidence,
+                "constraints": constraints or {},
+                "applies_to_entity_types": applies_to_entity_types or [],
             },
         )
         return Topic.model_validate(data)
@@ -355,6 +394,7 @@ class ClueState:
         source_description: str = "",
         meta: Optional[dict[str, Any]] = None,
         auto_create_entity: bool = True,
+        dry_run: bool = False,
     ) -> IngestResponse:
         if not external_id and not entity_id:
             raise ValueError("Provide either 'external_id' or 'entity_id'")
@@ -366,6 +406,7 @@ class ClueState:
             "source_description": source_description,
             "meta": meta or {},
             "auto_create_entity": auto_create_entity,
+            "dry_run": dry_run,
         }
         if external_id is not None:
             payload["external_id"] = external_id
@@ -430,8 +471,17 @@ class AsyncEntitiesResource:
         )
         return Entity.model_validate(data)
 
-    async def list(self, search: str = "", limit: int = 50, offset: int = 0) -> list[Entity]:
-        data = await self._client._request("GET", "/entities", params={"search": search, "limit": limit, "offset": offset})
+    async def list(
+        self,
+        search: str = "",
+        limit: int = 50,
+        offset: int = 0,
+        where: Optional[list[str]] = None,
+    ) -> list[Entity]:
+        params: dict[str, Any] = {"search": search, "limit": limit, "offset": offset}
+        if where:
+            params["where"] = where
+        data = await self._client._request("GET", "/entities", params=params)
         return [Entity.model_validate(item) for item in data]
 
     async def get(self, entity_id: int) -> Entity:
@@ -501,18 +551,37 @@ class AsyncTopicsResource:
         update_policy: UpdatePolicyLiteral = "append",
         temporal: bool = False,
         enum_values: Optional[list[str]] = None,
+        *,
+        label: str = "",
+        extraction_instructions: str = "",
+        examples: Optional[list[Any]] = None,
+        ttl_days: Optional[int] = None,
+        allow_custom_values: bool = False,
+        allow_inferred: bool = True,
+        min_confidence: float = 0.0,
+        constraints: Optional[dict[str, Any]] = None,
+        applies_to_entity_types: Optional[list[str]] = None,
     ) -> Topic:
         data = await self._client._request(
             "POST",
             "/topics",
             json={
                 "name": name,
+                "label": label,
                 "description": description,
+                "extraction_instructions": extraction_instructions,
+                "examples": examples or [],
                 "data_type": data_type,
                 "cardinality": cardinality,
                 "update_policy": update_policy,
                 "temporal": temporal,
+                "ttl_days": ttl_days,
                 "enum_values": enum_values or [],
+                "allow_custom_values": allow_custom_values,
+                "allow_inferred": allow_inferred,
+                "min_confidence": min_confidence,
+                "constraints": constraints or {},
+                "applies_to_entity_types": applies_to_entity_types or [],
             },
         )
         return Topic.model_validate(data)
@@ -580,6 +649,7 @@ class AsyncClueState:
         source_description: str = "",
         meta: Optional[dict[str, Any]] = None,
         auto_create_entity: bool = True,
+        dry_run: bool = False,
     ) -> IngestResponse:
         if not external_id and not entity_id:
             raise ValueError("Provide either 'external_id' or 'entity_id'")
@@ -591,6 +661,7 @@ class AsyncClueState:
             "source_description": source_description,
             "meta": meta or {},
             "auto_create_entity": auto_create_entity,
+            "dry_run": dry_run,
         }
         if external_id is not None:
             payload["external_id"] = external_id

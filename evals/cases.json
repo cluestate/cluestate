@@ -1,0 +1,219 @@
+[
+  {
+    "id": "negation_not_vegan",
+    "category": "negation",
+    "description": "Explicit negation ('not vegan') must produce is_vegan=false or reject positive claim",
+    "entity_name": "Viktor Kovac",
+    "topics": [
+      {
+        "name": "is_vegan",
+        "data_type": "boolean",
+        "cardinality": "single",
+        "update_policy": "replace",
+        "allow_inferred": false,
+        "extraction_instructions": "Set true ONLY if explicitly stated vegan. Set false if explicitly not vegan or eats animal products."
+      }
+    ],
+    "content": "Patient Viktor Kovac states: I am NOT vegan — I eat fish and eggs every week.",
+    "simulated_claims": [
+      {
+        "claim": "Patient does not follow a vegan diet",
+        "topic_name": "is_vegan",
+        "value": "false",
+        "claim_type": "explicit",
+        "operation": "add",
+        "confidence": 0.96,
+        "evidence_excerpt": "I am NOT vegan — I eat fish and eggs every week."
+      }
+    ],
+    "expected_state": { "is_vegan": false },
+    "expected_verified": true
+  },
+  {
+    "id": "speaker_attribution_clinic",
+    "category": "speaker_attribution",
+    "description": "Multi-speaker clinic dialogue triggers Smart Judge escalation to guard speaker ownership",
+    "entity_name": "Clara Lindqvist",
+    "topics": [
+      {
+        "name": "known_allergies",
+        "data_type": "list",
+        "cardinality": "multiple",
+        "update_policy": "review",
+        "allow_inferred": false
+      }
+    ],
+    "content": "Doctor: Do you have any allergy to penicillin or shellfish?\nClara: No penicillin allergy at all, only peanuts.",
+    "simulated_claims": [
+      {
+        "claim": "Allergic to peanuts",
+        "topic_name": "known_allergies",
+        "value": "peanuts",
+        "claim_type": "explicit",
+        "operation": "add",
+        "confidence": 0.95,
+        "evidence_excerpt": "only peanuts."
+      }
+    ],
+    "expect_judge_escalation": true,
+    "expected_state": { "known_allergies": ["peanuts"] },
+    "expected_verified": true
+  },
+  {
+    "id": "clinical_explicit_only_quarantine",
+    "category": "clinical_safety",
+    "description": "Inferred claim on allow_inferred=false tag must be quarantined to pending_review",
+    "entity_name": "Elena Rostova",
+    "topics": [
+      {
+        "name": "is_vegan",
+        "data_type": "boolean",
+        "cardinality": "single",
+        "update_policy": "replace",
+        "allow_inferred": false
+      }
+    ],
+    "content": "Elena ordered a plant-based oat latte and a vegan salad at lunch.",
+    "simulated_claims": [
+      {
+        "claim": "Elena follows a vegan diet",
+        "topic_name": "is_vegan",
+        "value": "true",
+        "claim_type": "inferred",
+        "operation": "add",
+        "confidence": 0.88,
+        "evidence_excerpt": "ordered a plant-based oat latte and a vegan salad"
+      }
+    ],
+    "expect_judge_escalation": true,
+    "expected_status": "pending_review",
+    "expected_state": {}
+  },
+  {
+    "id": "strict_schema_drop",
+    "category": "discovery_policy",
+    "description": "Strict discovery mode must deterministically drop untagged claims",
+    "entity_name": "Sarah Jenkins",
+    "policy": { "discovery_mode": "strict" },
+    "topics": [
+      {
+        "name": "annual_budget",
+        "data_type": "number",
+        "cardinality": "single",
+        "update_policy": "replace",
+        "constraints": { "unit": "USD", "min": 0 }
+      }
+    ],
+    "content": "Sarah mentioned it is raining in Zurich and confirmed an annual budget of $60,000.",
+    "simulated_claims": [
+      {
+        "claim": "Approved annual budget is $60,000",
+        "topic_name": "annual_budget",
+        "value": "$60,000",
+        "claim_type": "explicit",
+        "operation": "add",
+        "confidence": 0.96,
+        "evidence_excerpt": "confirmed an annual budget of $60,000"
+      },
+      {
+        "claim": "It is raining in Zurich",
+        "topic_name": null,
+        "value": "raining",
+        "claim_type": "explicit",
+        "operation": "add",
+        "confidence": 0.9,
+        "evidence_excerpt": "it is raining in Zurich"
+      }
+    ],
+    "expected_count": 1,
+    "expected_state": { "annual_budget": 60000 }
+  },
+  {
+    "id": "numeric_bounds_quarantine",
+    "category": "schema_validation",
+    "description": "Negative budget violating constraints.min=0 must be quarantined to pending_review",
+    "entity_name": "Acme Corp",
+    "topics": [
+      {
+        "name": "annual_budget",
+        "data_type": "number",
+        "cardinality": "single",
+        "update_policy": "replace",
+        "constraints": { "unit": "USD", "min": 0 }
+      }
+    ],
+    "content": "Account note: remaining budget adjustment -5000.",
+    "simulated_claims": [
+      {
+        "claim": "Budget is -5000",
+        "topic_name": "annual_budget",
+        "value": "-5000",
+        "claim_type": "explicit",
+        "operation": "add",
+        "confidence": 0.95,
+        "evidence_excerpt": "budget adjustment -5000"
+      }
+    ],
+    "expected_status": "pending_review",
+    "expected_state": {}
+  },
+  {
+    "id": "enum_custom_fallback",
+    "category": "schema_validation",
+    "description": "Enum tag with allow_custom_values=true accepts custom channel without quarantine",
+    "entity_name": "Liam Miller",
+    "topics": [
+      {
+        "name": "preferred_contact_method",
+        "data_type": "enum",
+        "cardinality": "single",
+        "update_policy": "replace",
+        "enum_values": ["sms", "email", "phone_call"],
+        "allow_custom_values": true
+      }
+    ],
+    "content": "Liam requested all updates via Signal messenger.",
+    "simulated_claims": [
+      {
+        "claim": "Prefers Signal messenger for updates",
+        "topic_name": "preferred_contact_method",
+        "value": "signal",
+        "claim_type": "explicit",
+        "operation": "add",
+        "confidence": 0.95,
+        "evidence_excerpt": "all updates via Signal messenger"
+      }
+    ],
+    "expected_status": "active",
+    "expected_state": { "preferred_contact_method": "signal" }
+  },
+  {
+    "id": "unverified_quote_confidence_cap",
+    "category": "provenance",
+    "description": "Hallucinated excerpt not present in source text gets is_verified=false and capped confidence",
+    "entity_name": "Marcus Vance",
+    "topics": [
+      {
+        "name": "tech_stack",
+        "data_type": "list",
+        "cardinality": "multiple",
+        "update_policy": "append"
+      }
+    ],
+    "content": "Marcus said the frontend is built in React.",
+    "simulated_claims": [
+      {
+        "claim": "Uses Kubernetes in production",
+        "topic_name": "tech_stack",
+        "value": "Kubernetes",
+        "claim_type": "explicit",
+        "operation": "add",
+        "confidence": 0.98,
+        "evidence_excerpt": "We run Kubernetes everywhere"
+      }
+    ],
+    "expect_judge_escalation": true,
+    "expected_verified": false,
+    "max_confidence": 0.45
+  }
+]

@@ -71,6 +71,7 @@ export class EntitiesResource {
         search: params.search ?? '',
         limit: params.limit ?? 50,
         offset: params.offset ?? 0,
+        where: params.where,
       },
     });
   }
@@ -128,12 +129,21 @@ export class TopicsResource {
     return this.client._request<Topic>('POST', '/topics', {
       body: {
         name: params.name,
+        label: params.label ?? '',
         description: params.description ?? '',
+        extraction_instructions: params.extractionInstructions ?? params.extraction_instructions ?? '',
+        examples: params.examples ?? [],
         data_type: params.dataType ?? params.data_type ?? 'text',
         cardinality: params.cardinality ?? 'multiple',
         update_policy: params.updatePolicy ?? params.update_policy ?? 'append',
         temporal: params.temporal ?? false,
+        ttl_days: params.ttlDays ?? params.ttl_days ?? null,
         enum_values: params.enumValues ?? params.enum_values ?? [],
+        allow_custom_values: params.allowCustomValues ?? params.allow_custom_values ?? false,
+        allow_inferred: params.allowInferred ?? params.allow_inferred ?? true,
+        min_confidence: params.minConfidence ?? params.min_confidence ?? 0.0,
+        constraints: params.constraints ?? {},
+        applies_to_entity_types: params.appliesToEntityTypes ?? params.applies_to_entity_types ?? [],
       },
     });
   }
@@ -146,15 +156,36 @@ export class TopicsResource {
 
   async update(topicId: number, params: UpdateTopicParams): Promise<Topic> {
     const body: Record<string, unknown> = {};
+    if (params.label !== undefined) body.label = params.label;
     if (params.description !== undefined) body.description = params.description;
+    if ((params.extractionInstructions ?? params.extraction_instructions) !== undefined) {
+      body.extraction_instructions = params.extractionInstructions ?? params.extraction_instructions;
+    }
+    if (params.examples !== undefined) body.examples = params.examples;
     if (params.dataType ?? params.data_type) body.data_type = params.dataType ?? params.data_type;
     if (params.cardinality !== undefined) body.cardinality = params.cardinality;
     if (params.updatePolicy ?? params.update_policy) {
       body.update_policy = params.updatePolicy ?? params.update_policy;
     }
     if (params.temporal !== undefined) body.temporal = params.temporal;
+    if ((params.ttlDays ?? params.ttl_days) !== undefined) {
+      body.ttl_days = params.ttlDays ?? params.ttl_days;
+    }
     if (params.enumValues ?? params.enum_values) {
       body.enum_values = params.enumValues ?? params.enum_values;
+    }
+    if ((params.allowCustomValues ?? params.allow_custom_values) !== undefined) {
+      body.allow_custom_values = params.allowCustomValues ?? params.allow_custom_values;
+    }
+    if ((params.allowInferred ?? params.allow_inferred) !== undefined) {
+      body.allow_inferred = params.allowInferred ?? params.allow_inferred;
+    }
+    if ((params.minConfidence ?? params.min_confidence) !== undefined) {
+      body.min_confidence = params.minConfidence ?? params.min_confidence;
+    }
+    if (params.constraints !== undefined) body.constraints = params.constraints;
+    if (params.appliesToEntityTypes ?? params.applies_to_entity_types) {
+      body.applies_to_entity_types = params.appliesToEntityTypes ?? params.applies_to_entity_types;
     }
     if ((params.isActive ?? params.is_active) !== undefined) {
       body.is_active = params.isActive ?? params.is_active;
@@ -212,14 +243,20 @@ export class ClueState {
     method: string,
     path: string,
     options: {
-      query?: Record<string, string | number | boolean | undefined>;
+      query?: Record<string, string | number | boolean | string[] | undefined>;
       body?: unknown;
     } = {}
   ): Promise<T> {
     const url = new URL(`${this.baseUrl}${path}`);
     if (options.query) {
       for (const [k, v] of Object.entries(options.query)) {
-        if (v !== undefined && v !== null && v !== '') {
+        if (Array.isArray(v)) {
+          for (const item of v) {
+            if (item !== undefined && item !== null && item !== '') {
+              url.searchParams.append(k, String(item));
+            }
+          }
+        } else if (v !== undefined && v !== null && v !== '') {
           url.searchParams.set(k, String(v));
         }
       }
@@ -296,6 +333,7 @@ export class ClueState {
       source_description: params.sourceDescription ?? params.source_description ?? '',
       meta: params.meta ?? {},
       auto_create_entity: params.autoCreateEntity ?? params.auto_create_entity ?? true,
+      dry_run: params.dryRun ?? params.dry_run ?? false,
     };
 
     if (externalId !== undefined) payload.external_id = externalId;

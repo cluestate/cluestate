@@ -74,6 +74,8 @@ DEFAULT_EXTRACTION_POLICY: dict[str, Any] = {
     "discovery_review_policy": "active",
     "discovery_allow_inferred": True,
     "discovery_max_per_episode": 5,
+    "judge_mode": "smart",  # off | smart | always
+    "judge_model": "",
 }
 
 
@@ -97,6 +99,11 @@ def normalize_extraction_policy(raw: Optional[dict[str, Any]]) -> dict[str, Any]
         base["discovery_max_per_episode"] = max(0, min(50, max_ep))
     except (ValueError, TypeError):
         base["discovery_max_per_episode"] = 5
+    j_mode = str(raw.get("judge_mode", base["judge_mode"])).lower().strip()
+    if j_mode not in ("off", "smart", "always"):
+        j_mode = "smart"
+    base["judge_mode"] = j_mode
+    base["judge_model"] = str(raw.get("judge_model", "") or "").strip()
     return base
 
 
@@ -336,6 +343,7 @@ class Memory(SQLModel, table=True):
     claim_type: ClaimType = Field(default=ClaimType.EXPLICIT)
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
     status: MemoryStatus = Field(default=MemoryStatus.ACTIVE)
+    judge_note: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
     superseded_by_id: Optional[int] = Field(default=None, foreign_key="memories.id")
     valid_from: Optional[datetime] = Field(default=None)
     valid_to: Optional[datetime] = Field(default=None)

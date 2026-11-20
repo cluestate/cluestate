@@ -173,6 +173,21 @@ export const MemoryCard: React.FC<MemoryCardProps> = ({
           &ldquo;{firstEv.excerpt}&rdquo;
         </div>
       )}
+
+      {/* Critic / Judge Diagnostic Note */}
+      {memory.judge_note && (
+        <div
+          className="mono"
+          style={{
+            marginTop: '6px',
+            fontSize: '11.5px',
+            color: memory.status === 'pending_review' ? 'var(--signal-red)' : 'var(--ultramarine)',
+            lineHeight: 1.4,
+          }}
+        >
+          AUDIT NOTE · {memory.judge_note}
+        </div>
+      )}
     </div>
   );
 };

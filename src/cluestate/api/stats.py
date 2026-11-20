@@ -1,5 +1,7 @@
 """System and dashboard overview statistics scoped to the active workspace."""
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -157,6 +159,15 @@ async def get_dashboard_stats(
         for row in res_topic_dist.all()
     ]
 
+    month_start = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    res_month_ep = await session.execute(
+        select(func.count(Episode.id)).where(
+            Episode.workspace_id == workspace.id,
+            Episode.created_at >= month_start,
+        )
+    )
+    ingests_this_month = res_month_ep.scalar() or 0
+
     return {
         "total_entities": total_entities,
         "total_memories": total_memories,
@@ -169,9 +180,15 @@ async def get_dashboard_stats(
         "recent_memories": recent_memories,
         "topic_distribution": topic_distribution,
         "extraction_policy": normalize_extraction_policy(workspace.extraction_policy),
+        "usage": {
+            "ingests_this_month": ingests_this_month,
+            "monthly_ingest_limit": settings.max_ingests_per_workspace_month,
+            "rate_limit_per_min": settings.rate_limit_ingest_per_min,
+        },
         "system_info": {
             "version": __version__,
-            "llm_model": settings.llm_model,
+            "llm_model": settings.resolved_llm_model,
+            "judge_model": settings.resolved_judge_model,
             "database": "sqlite" if settings.is_sqlite else "postgresql",
         },
     }

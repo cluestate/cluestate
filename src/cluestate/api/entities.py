@@ -1,12 +1,12 @@
 """Entity CRUD endpoints scoped to the active workspace."""
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_session
-from ..engine import compile_entity_state
-from ..models import Entity, Episode, Evidence, Memory, MemoryStatus, Workspace
+from ..engine import compile_entity_state, matches_state_filters
+from ..models import Entity, Episode, Evidence, Memory, MemoryStatus, Topic, Workspace
 from ..schemas import EntityCreate, EntityDetail, EntityRead, EpisodeRead
 from ..security import get_current_workspace
 from .memories import hydrate_memory_reads
@@ -55,44 +55,71 @@ async def list_entities(
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     search: str = Query("", description="Search by name or external_id"),
+    where: list[str] = Query(
+        default=[],
+        description="Filter profiles by compiled state (e.g. where=is_vegan:true&where=annual_budget>=25000)",
+    ),
     workspace: Workspace = Depends(get_current_workspace),
     session: AsyncSession = Depends(get_session),
 ):
-    """List tracked entities in the active workspace with batched memory counts (zero N+1)."""
-    query = (
+    """List tracked entities in the active workspace with batched compiled state and optional state filtering."""
+    base_query = (
         select(Entity)
         .where(Entity.workspace_id == workspace.id)
-        .offset(offset)
-        .limit(limit)
         .order_by(Entity.created_at.desc())
     )
     if search:
-        query = query.where(
+        base_query = base_query.where(
             Entity.name.ilike(f"%{search}%") | Entity.external_id.ilike(f"%{search}%")
         )
 
-    result = await session.execute(query)
+    clean_where = [w.strip() for w in where if w and w.strip()]
+    if not clean_where:
+        base_query = base_query.offset(offset).limit(limit)
+
+    result = await session.execute(base_query)
     entities = list(result.scalars().all())
     if not entities:
         return []
 
     entity_ids = [e.id for e in entities if e.id is not None]
-    counts_by_entity: dict[int, int] = {}
+
+    # Batch-load active/confirmed memories and workspace topics (zero N+1)
+    topics_res = await session.execute(
+        select(Topic).where(Topic.workspace_id == workspace.id)
+    )
+    topics_by_id = {t.id: t for t in topics_res.scalars().all() if t.id is not None}
+
+    memories_by_entity: dict[int, list[Memory]] = {}
     if entity_ids:
-        cnt_res = await session.execute(
-            select(Memory.entity_id, func.count(Memory.id))
+        mem_res = await session.execute(
+            select(Memory)
             .where(
                 Memory.entity_id.in_(entity_ids),
                 Memory.status.in_([MemoryStatus.ACTIVE, MemoryStatus.CONFIRMED]),
             )
-            .group_by(Memory.entity_id)
+            .order_by(Memory.confidence.desc(), Memory.updated_at.desc())
         )
-        counts_by_entity = {row[0]: row[1] for row in cnt_res.all()}
+        for mem in mem_res.scalars().all():
+            memories_by_entity.setdefault(mem.entity_id, []).append(mem)
 
-    return [
-        EntityRead(**entity.model_dump(), memory_count=counts_by_entity.get(entity.id, 0) if entity.id else 0)
-        for entity in entities
-    ]
+    items: list[EntityRead] = []
+    for entity in entities:
+        ent_mems = memories_by_entity.get(entity.id, []) if entity.id else []
+        compiled = compile_entity_state(ent_mems, topics_by_id)
+        if clean_where and not matches_state_filters(compiled, clean_where):
+            continue
+        items.append(
+            EntityRead(
+                **entity.model_dump(),
+                memory_count=len(ent_mems),
+                state=compiled,
+            )
+        )
+
+    if clean_where:
+        return items[offset : offset + limit]
+    return items
 
 
 @router.get("/{entity_id}", response_model=EntityDetail)

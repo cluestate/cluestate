@@ -340,6 +340,33 @@ export const EvidenceInspector: React.FC<EvidenceInspectorProps> = ({
             {memory.claim}
           </div>
 
+          {memory.judge_note && (
+            <div
+              style={{
+                marginTop: '12px',
+                padding: '10px 12px',
+                background: '#FFFFFF',
+                borderLeft: `3px solid ${memory.status === 'pending_review' ? 'var(--signal-red)' : 'var(--ultramarine)'}`,
+              }}
+            >
+              <div
+                className="mono"
+                style={{
+                  fontSize: '10px',
+                  fontWeight: 600,
+                  color: memory.status === 'pending_review' ? 'var(--signal-red)' : 'var(--ultramarine)',
+                  letterSpacing: '0.07em',
+                  marginBottom: '3px',
+                }}
+              >
+                CRITIC / POLICY DIAGNOSTIC
+              </div>
+              <div style={{ fontSize: '12.5px', color: 'var(--text-primary)', lineHeight: 1.45 }}>
+                {memory.judge_note}
+              </div>
+            </div>
+          )}
+
           {!memory.topic_id && onPromoteToTag && (
             <button
               type="button"

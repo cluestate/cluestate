@@ -33,6 +33,7 @@ class Settings(BaseSettings):
 
     # ─── LLM ───
     llm_model: str = "openai/gpt-4o-mini"
+    judge_model: str = ""  # Optional dedicated Critic/Judge model (defaults to resolved_llm_model)
 
     # Provider keys (LiteLLM reads these automatically)
     openai_api_key: str = ""
@@ -62,12 +63,40 @@ class Settings(BaseSettings):
     conflict_threshold: float = 0.7
     max_context_memories: int = 50
 
+    # ─── Hosted Guardrails (0 = unlimited for local self-hosting) ───
+    rate_limit_ingest_per_min: int = 0
+    max_ingests_per_workspace_month: int = 0
+
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",
         "case_sensitive": False,
         "extra": "ignore",
     }
+
+    @property
+    def resolved_llm_model(self) -> str:
+        """
+        Return configured LLM model, auto-detecting a sensible default if the user
+        provided a non-OpenAI provider key without overriding LLM_MODEL.
+        """
+        if self.llm_model != "openai/gpt-4o-mini":
+            return self.llm_model
+        has_openai = bool(self.openai_api_key or os.environ.get("OPENAI_API_KEY"))
+        if has_openai:
+            return self.llm_model
+        if self.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY"):
+            return "anthropic/claude-3-5-haiku-latest"
+        if self.gemini_api_key or os.environ.get("GEMINI_API_KEY"):
+            return "gemini/gemini-2.0-flash"
+        if self.mistral_api_key or os.environ.get("MISTRAL_API_KEY"):
+            return "mistral/mistral-small-latest"
+        return self.llm_model
+
+    @property
+    def resolved_judge_model(self) -> str:
+        """Return configured Critic/Judge model, falling back to resolved_llm_model."""
+        return self.judge_model.strip() or self.resolved_llm_model
 
     @property
     def is_sqlite(self) -> bool:

@@ -1,18 +1,22 @@
 """Ingest endpoint — unstructured or structured interaction → verified customer state."""
 
 import logging
+import time
+from collections import defaultdict, deque
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..config import get_settings
 from ..database import get_session
 from ..engine import (
     ExtractionError,
     compile_entity_state,
     compute_content_hash,
     extract_memories_from_text,
+    judge_extracted_claims,
     process_extracted_claims,
 )
 from ..models import (
@@ -26,12 +30,59 @@ from ..models import (
     Workspace,
     ensure_workspace_source_type,
 )
-from ..schemas import EvidenceRead, IngestRequest, IngestResponse, MemoryRead
+from ..schemas import EvidenceRead, IngestRequest, IngestResponse, JudgeRejectedItem, MemoryRead
 from ..security import get_current_workspace
 
 logger = logging.getLogger("cluestate.api.ingest")
 
 router = APIRouter(prefix="/ingest", tags=["Ingest"])
+
+# In-memory sliding-window rate limiter per workspace_id (timestamps in monotonic seconds)
+_INGEST_RATE_BUCKETS: dict[int, deque[float]] = defaultdict(deque)
+
+
+def _check_workspace_rate_limit(workspace_id: int, limit_per_min: int) -> None:
+    if limit_per_min <= 0:
+        return
+    now_mono = time.monotonic()
+    cutoff = now_mono - 60.0
+    bucket = _INGEST_RATE_BUCKETS[workspace_id]
+    while bucket and bucket[0] < cutoff:
+        bucket.popleft()
+    if len(bucket) >= limit_per_min:
+        retry_after = max(1, int(60 - (now_mono - bucket[0])))
+        raise HTTPException(
+            status_code=429,
+            detail=f"Workspace ingestion rate limit exceeded ({limit_per_min}/min). Retry in {retry_after}s.",
+            headers={"Retry-After": str(retry_after)},
+        )
+    bucket.append(now_mono)
+
+
+async def _check_workspace_monthly_quota(
+    session: AsyncSession,
+    workspace_id: int,
+    monthly_limit: int,
+) -> None:
+    if monthly_limit <= 0:
+        return
+    now_utc = datetime.now(timezone.utc)
+    month_start = now_utc.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    res = await session.execute(
+        select(func.count(Episode.id)).where(
+            Episode.workspace_id == workspace_id,
+            Episode.created_at >= month_start,
+        )
+    )
+    used = res.scalar() or 0
+    if used >= monthly_limit:
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"Workspace monthly ingestion quota reached ({used}/{monthly_limit}). "
+                "Upgrade your plan or increase MAX_INGESTS_PER_WORKSPACE_MONTH."
+            ),
+        )
 
 
 @router.post("", response_model=IngestResponse)
@@ -107,8 +158,19 @@ async def ingest(
                 memories_new=0,
                 idempotent_replay=True,
                 dry_run=False,
+                judge_applied=False,
+                judge_rejected=[],
                 state=compile_entity_state(memories, topics_by_id),
                 memories=mem_reads,
+            )
+
+    # ── 1b. Hosted Rate Limit & Monthly Quota Guardrails ──
+    settings = get_settings()
+    if workspace.id is not None:
+        _check_workspace_rate_limit(workspace.id, settings.rate_limit_ingest_per_min)
+        if not body.dry_run:
+            await _check_workspace_monthly_quota(
+                session, workspace.id, settings.max_ingests_per_workspace_month
             )
 
     # ── 2. Resolve Entity ──
@@ -209,14 +271,25 @@ async def ingest(
 
     logger.info(f"LLM extracted {len(extraction.claims)} claims")
 
+    # ── 5b. Stage 3 Adversarial Critic / Judge (off | smart | always) ──
+    filtered_extraction, judge_decisions, judge_rejected, judge_applied = await judge_extracted_claims(
+        content=body.content,
+        entity_name=entity.name or entity.external_id,
+        extraction=extraction,
+        existing_memories=existing_memories,
+        topics=topics,
+        extraction_policy=workspace.extraction_policy,
+    )
+
     # ── 6. Process and Persist State Transitions ──
     all_memories, new_count, updated_count = await process_extracted_claims(
         session=session,
         entity=entity,
         episode=episode,
-        extraction=extraction,
+        extraction=filtered_extraction,
         topics=topics,
         extraction_policy=workspace.extraction_policy,
+        judge_decisions=judge_decisions,
     )
 
     # ── 7. Build Response with Batched Verified Evidence & Compiled State ──
@@ -276,6 +349,8 @@ async def ingest(
         memories_new=new_count,
         idempotent_replay=False,
         dry_run=body.dry_run,
+        judge_applied=judge_applied,
+        judge_rejected=[JudgeRejectedItem(**r) for r in judge_rejected],
         state=compiled_state,
         memories=memory_reads,
     )

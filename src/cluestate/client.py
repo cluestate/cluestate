@@ -104,8 +104,11 @@ class EntitiesResource:
         search: str = "",
         limit: int = 50,
         offset: int = 0,
+        where: Optional[list[str]] = None,
     ) -> list[EntityRead]:
-        params = {"search": search, "limit": limit, "offset": offset}
+        params: dict[str, Any] = {"search": search, "limit": limit, "offset": offset}
+        if where:
+            params["where"] = where
         data = self._client._request("GET", "/entities", params=params)
         return [EntityRead.model_validate(item) for item in data]
 
@@ -315,6 +318,7 @@ class ClueState:
         source_description: str = "",
         meta: Optional[dict[str, Any]] = None,
         auto_create_entity: bool = True,
+        dry_run: bool = False,
     ) -> IngestResponse:
         """Ingest an interaction and extract verified customer state claims."""
         if not external_id and not entity_id:
@@ -327,6 +331,7 @@ class ClueState:
             "source_description": source_description,
             "meta": meta or {},
             "auto_create_entity": auto_create_entity,
+            "dry_run": dry_run,
         }
         if external_id is not None:
             payload["external_id"] = external_id
@@ -407,8 +412,11 @@ class AsyncEntitiesResource:
         search: str = "",
         limit: int = 50,
         offset: int = 0,
+        where: Optional[list[str]] = None,
     ) -> list[EntityRead]:
-        params = {"search": search, "limit": limit, "offset": offset}
+        params: dict[str, Any] = {"search": search, "limit": limit, "offset": offset}
+        if where:
+            params["where"] = where
         data = await self._client._request("GET", "/entities", params=params)
         return [EntityRead.model_validate(item) for item in data]
 
@@ -612,6 +620,7 @@ class AsyncClueState:
         source_description: str = "",
         meta: Optional[dict[str, Any]] = None,
         auto_create_entity: bool = True,
+        dry_run: bool = False,
     ) -> IngestResponse:
         """Ingest an interaction asynchronously and extract verified customer state."""
         if not external_id and not entity_id:
@@ -624,6 +633,7 @@ class AsyncClueState:
             "source_description": source_description,
             "meta": meta or {},
             "auto_create_entity": auto_create_entity,
+            "dry_run": dry_run,
         }
         if external_id is not None:
             payload["external_id"] = external_id

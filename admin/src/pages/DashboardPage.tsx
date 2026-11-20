@@ -29,6 +29,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   const { notify } = useToast();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [seedingDemo, setSeedingDemo] = useState<'clinical' | 'saas' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const fetchStats = async () => {
@@ -48,6 +49,22 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   useEffect(() => {
     fetchStats();
   }, [workspace?.id]);
+
+  const handleSeedDemo = async (preset: 'clinical' | 'saas') => {
+    try {
+      setSeedingDemo(preset);
+      const res = await api.seedDemoWorkspace(preset);
+      notify(
+        `Loaded ${preset === 'clinical' ? 'Clinical Intake' : 'Enterprise SaaS'} demo (${res.entities_created} profiles, ${res.memories_created} verified facts)`,
+        'success'
+      );
+      await fetchStats();
+    } catch (err: any) {
+      notify(err.message || 'Failed to load sample workspace', 'error');
+    } finally {
+      setSeedingDemo(null);
+    }
+  };
 
   const handleUpdateMemoryStatus = async (memoryId: number, status: MemoryStatus) => {
     try {
@@ -81,6 +98,14 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                   ? 'GUIDED HYBRID'
                   : 'OPEN DISCOVERY'}
             </span>
+            {stats?.usage && stats.usage.monthly_ingest_limit > 0 && (
+              <>
+                <span>·</span>
+                <span>
+                  QUOTA: {stats.usage.ingests_this_month}/{stats.usage.monthly_ingest_limit} / MO
+                </span>
+              </>
+            )}
           </div>
           <h1 className="page-title">Overview</h1>
         </div>
@@ -146,10 +171,44 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         </div>
       </div>
 
-      {/* 3-Step Signal Strip Setup Guide when Workspace is empty */}
+      {/* Instant 1-Click Demo & Quickstart Setup when Workspace is empty */}
       {stats && (stats.total_topics === 0 || stats.total_memories === 0) && (
         <div style={{ marginBottom: '36px' }}>
-          <div className="card-title">QUICKSTART SETUP</div>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: '12px',
+              marginBottom: '12px',
+            }}
+          >
+            <div className="card-title" style={{ margin: 0 }}>
+              QUICKSTART SETUP
+            </div>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <span className="mono" style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
+                INSTANT SAMPLE DATA (0 LLM COST):
+              </span>
+              <button
+                type="button"
+                className="btn btn-secondary btn-xs"
+                disabled={seedingDemo !== null}
+                onClick={() => handleSeedDemo('clinical')}
+              >
+                {seedingDemo === 'clinical' ? 'Loading…' : 'Load Clinical Demo'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary btn-xs"
+                disabled={seedingDemo !== null}
+                onClick={() => handleSeedDemo('saas')}
+              >
+                {seedingDemo === 'saas' ? 'Loading…' : 'Load SaaS Demo'}
+              </button>
+            </div>
+          </div>
           <div className="grid-3">
             <div
               className="signal-strip"

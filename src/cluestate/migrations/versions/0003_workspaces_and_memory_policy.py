@@ -76,7 +76,7 @@ def upgrade() -> None:
                 bind.execute(
                     sa.text(
                         "INSERT INTO workspace_members (workspace_id, user_id, role, joined_at) "
-                        "VALUES (:wid, :uid, 'owner', COALESCE(:joined_at, CURRENT_TIMESTAMP))"
+                        "VALUES (:wid, :uid, 'OWNER', COALESCE(:joined_at, CURRENT_TIMESTAMP))"
                     ),
                     {"wid": ws_id, "uid": owner_id, "joined_at": created_at},
                 )

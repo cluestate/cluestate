@@ -353,3 +353,59 @@ async def test_multi_workspace_switching_invites_and_compiled_intel(db_session: 
             headers={**nurse_headers, "X-Workspace-Id": str(ws2_id)},
         )
         assert forbid_ws2.status_code == 403
+
+
+def test_alembic_0003_migration_backfills_workspace_owners(tmp_path):
+    """Verify upgrading from 0002 -> 0003 backfills existing owners with valid WorkspaceRole enum casing."""
+    import os
+
+    from alembic import command
+    from alembic.config import Config
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.orm import Session
+
+    import cluestate
+    from cluestate.models import WorkspaceMember, WorkspaceRole
+
+    db_file = tmp_path / "upgrade_test.db"
+    sync_url = f"sqlite:///{db_file}"
+    migrations_dir = os.path.join(os.path.dirname(cluestate.__file__), "migrations")
+
+    cfg = Config()
+    cfg.set_main_option("script_location", migrations_dir)
+
+    engine = create_engine(sync_url)
+
+    # Upgrade to 0002 first (simulating existing production deployment before Phase 1+2)
+    with engine.begin() as conn:
+        cfg.attributes["connection"] = conn
+        command.upgrade(cfg, "0002_flexible_source_types")
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO users (id, email, password_hash, full_name, is_active, created_at) "
+                "VALUES (1, 'owner@clinic.ch', 'hash', 'Owner', 1, CURRENT_TIMESTAMP)"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO workspaces (id, name, slug, owner_id, source_types, created_at) "
+                "VALUES (1, 'Clinic', 'clinic', 1, '[\"conversation\"]', CURRENT_TIMESTAMP)"
+            )
+        )
+
+    # Upgrade to head (0003)
+    with engine.begin() as conn:
+        cfg.attributes["connection"] = conn
+        command.upgrade(cfg, "head")
+
+    with Session(engine) as session:
+        members = session.query(WorkspaceMember).all()
+        assert len(members) == 1
+        assert members[0].workspace_id == 1
+        assert members[0].user_id == 1
+        assert members[0].role == WorkspaceRole.OWNER
+
+    engine.dispose()
+

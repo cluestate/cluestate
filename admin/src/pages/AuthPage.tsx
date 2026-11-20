@@ -132,13 +132,12 @@ export const AuthPage: React.FC<AuthPageProps> = ({ inviteToken, onAuthenticated
       }}
     >
       <div
-        className="card"
+        className="surface-ice"
         style={{
           width: '100%',
           maxWidth: '430px',
-          padding: '30px 32px',
-          border: '1px solid var(--border-primary)',
-          boxShadow: 'var(--shadow-md)',
+          padding: '32px 34px',
+          borderLeft: '3px solid var(--ultramarine)',
         }}
       >
         {/* Brand Header */}

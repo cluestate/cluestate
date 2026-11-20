@@ -2,13 +2,8 @@ import React, { useState, useEffect } from 'react';
 import {
   CheckCircle2,
   XCircle,
-  ShieldCheck,
-  AlertTriangle,
-  Clock,
-  Tag,
   Edit3,
   Plus,
-  FileText,
   Trash2,
 } from 'lucide-react';
 import type { Evidence, Memory, MemoryStatus, Topic } from '../types';
@@ -57,16 +52,12 @@ export const EvidenceInspector: React.FC<EvidenceInspectorProps> = ({
 
   if (!memory) {
     return (
-      <div className="card inspector-sticky" style={{ padding: '28px 22px', textAlign: 'center' }}>
-        <FileText
-          size={24}
-          style={{ color: 'var(--text-muted)', margin: '0 auto 10px', opacity: 0.6 }}
-        />
-        <div style={{ fontSize: '13.5px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '4px' }}>
-          Provenance &amp; Evidence Inspector
+      <div className="inspector-plane" style={{ padding: '32px 24px' }}>
+        <div className="card-title" style={{ marginBottom: '6px' }}>
+          SOURCE PROVENANCE
         </div>
-        <div style={{ fontSize: '12.5px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-          Select any memory or claim from the ledger to inspect its character-verified source excerpt, episode transcript, and schema assignment.
+        <div style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.55 }}>
+          Select any signal strip on the left to inspect its verbatim source quote, exact character span, and episode transcript.
         </div>
       </div>
     );
@@ -118,7 +109,6 @@ export const EvidenceInspector: React.FC<EvidenceInspectorProps> = ({
       );
     }
 
-    // Fallback substring locate if char offsets weren't stored
     const excerptClean = (ev.excerpt || '').trim();
     const idx = excerptClean ? rawText.toLowerCase().indexOf(excerptClean.toLowerCase()) : -1;
     if (idx !== -1) {
@@ -137,7 +127,7 @@ export const EvidenceInspector: React.FC<EvidenceInspectorProps> = ({
     return <div className="episode-reader">{rawText}</div>;
   };
 
-  const getStatusBadge = (st: MemoryStatus) => {
+  const getStatusSignal = (st: MemoryStatus) => {
     switch (st) {
       case 'confirmed':
         return <span className="badge badge-success">CONFIRMED</span>;
@@ -168,25 +158,30 @@ export const EvidenceInspector: React.FC<EvidenceInspectorProps> = ({
   };
 
   const evidenceList = memory.evidence || [];
+  const firstEv = evidenceList[0];
 
   return (
-    <div className="card inspector-sticky" style={{ padding: '18px 20px' }}>
-      {/* Header */}
+    <div className="inspector-plane">
+      {/* Top Status & Edit Header */}
       <div
         style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          paddingBottom: '12px',
-          borderBottom: '1px solid var(--border-subtle)',
           marginBottom: '14px',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <span className="card-title" style={{ margin: 0 }}>
-            Memory #{memory.id}
+            SOURCE PROVENANCE
           </span>
-          {getStatusBadge(memory.status)}
+          {firstEv?.is_verified ? (
+            <span className="badge badge-success">
+              VERIFIED{firstEv.char_start != null ? ` [${firstEv.char_start}:${firstEv.char_end}]` : ''}
+            </span>
+          ) : (
+            getStatusSignal(memory.status)
+          )}
         </div>
 
         <div style={{ display: 'flex', gap: '4px' }}>
@@ -205,7 +200,7 @@ export const EvidenceInspector: React.FC<EvidenceInspectorProps> = ({
             <button
               type="button"
               className="btn btn-ghost btn-xs"
-              style={{ color: 'var(--danger)' }}
+              style={{ color: 'var(--signal-red)' }}
               onClick={() => onDeleteMemory(memory.id)}
               title="Delete memory"
             >
@@ -215,11 +210,11 @@ export const EvidenceInspector: React.FC<EvidenceInspectorProps> = ({
         </div>
       </div>
 
-      {/* Entity link if in global view */}
+      {/* Entity reference when inspecting in global Review Queue */}
       {memory.entity_name && (
         <div
           style={{
-            marginBottom: '10px',
+            marginBottom: '12px',
             fontSize: '12px',
             color: 'var(--text-secondary)',
             display: 'flex',
@@ -227,7 +222,9 @@ export const EvidenceInspector: React.FC<EvidenceInspectorProps> = ({
             alignItems: 'center',
           }}
         >
-          <span>Profile:</span>
+          <span className="mono" style={{ fontSize: '10.5px', textTransform: 'uppercase' }}>
+            PROFILE
+          </span>
           <button
             type="button"
             onClick={() => onSelectEntity && onSelectEntity(memory.entity_id)}
@@ -235,7 +232,7 @@ export const EvidenceInspector: React.FC<EvidenceInspectorProps> = ({
               background: 'none',
               border: 'none',
               padding: 0,
-              fontWeight: 600,
+              fontWeight: 700,
               color: 'var(--text-primary)',
               cursor: onSelectEntity ? 'pointer' : 'default',
               textDecoration: onSelectEntity ? 'underline' : 'none',
@@ -253,22 +250,19 @@ export const EvidenceInspector: React.FC<EvidenceInspectorProps> = ({
         </div>
       )}
 
-      {/* Claim & Value or Inline Editor */}
+      {/* Inline Editor or Selected Claim Summary */}
       {isEditing ? (
         <form
           onSubmit={handleSaveEdit}
           style={{
-            padding: '12px',
-            background: 'var(--bg-well)',
-            borderRadius: 'var(--radius-sm)',
-            border: '1px solid var(--border-subtle)',
-            marginBottom: '14px',
+            padding: '14px',
+            background: '#FFFFFF',
+            borderLeft: '3px solid var(--ultramarine)',
+            marginBottom: '16px',
           }}
         >
           <div className="input-group" style={{ marginBottom: '10px' }}>
-            <label className="input-label" style={{ fontSize: '11.5px' }}>
-              Memory Tag / Schema Slot
-            </label>
+            <label className="input-label">Schema Tag</label>
             <select
               className="input"
               style={{ fontSize: '12.5px', padding: '6px 9px' }}
@@ -285,9 +279,7 @@ export const EvidenceInspector: React.FC<EvidenceInspectorProps> = ({
           </div>
 
           <div className="input-group" style={{ marginBottom: '10px' }}>
-            <label className="input-label" style={{ fontSize: '11.5px' }}>
-              Normalized Value
-            </label>
+            <label className="input-label">Typed Value</label>
             <input
               type="text"
               className="input mono"
@@ -298,9 +290,7 @@ export const EvidenceInspector: React.FC<EvidenceInspectorProps> = ({
           </div>
 
           <div className="input-group" style={{ marginBottom: '12px' }}>
-            <label className="input-label" style={{ fontSize: '11.5px' }}>
-              Atomic Claim Statement
-            </label>
+            <label className="input-label">Atomic Claim</label>
             <textarea
               className="input"
               style={{ minHeight: '64px', fontSize: '12.5px', padding: '6px 9px' }}
@@ -319,93 +309,102 @@ export const EvidenceInspector: React.FC<EvidenceInspectorProps> = ({
               Cancel
             </button>
             <button type="submit" className="btn btn-primary btn-xs" disabled={isSaving}>
-              {isSaving ? 'Saving...' : 'Save Changes'}
+              {isSaving ? 'Saving…' : 'Save'}
             </button>
           </div>
         </form>
       ) : (
         <div style={{ marginBottom: '16px' }}>
           <div
+            className="mono"
             style={{
-              fontSize: '14.5px',
+              fontSize: '11px',
               fontWeight: 600,
+              color: 'var(--ultramarine)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.06em',
+              marginBottom: '4px',
+            }}
+          >
+            {memory.topic_name || 'OPEN_DISCOVERY'}
+            {memory.value ? ` = ${memory.value}` : ''}
+          </div>
+          <div
+            style={{
+              fontSize: '15px',
+              fontWeight: 700,
               color: 'var(--text-primary)',
-              lineHeight: 1.45,
-              marginBottom: '10px',
+              lineHeight: 1.4,
             }}
           >
             {memory.claim}
           </div>
 
-          {/* Structured Tag & Value Sheet */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
-              gap: '8px',
-              padding: '10px 12px',
-              background: 'var(--bg-well)',
-              borderRadius: 'var(--radius-sm)',
-              border: '1px solid var(--border-subtle)',
-              fontSize: '12px',
-            }}
-          >
-            <div>
-              <div style={{ color: 'var(--text-muted)', fontSize: '10.5px', fontFamily: 'var(--font-mono)', textTransform: 'uppercase' }}>
-                Schema Tag
-              </div>
-              <div style={{ marginTop: '3px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                {memory.topic_name ? (
-                  <span className="tag-pill">
-                    <Tag size={11} />
-                    {memory.topic_name}
-                  </span>
-                ) : (
-                  <span style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: '11.5px' }}>
-                    open_discovery
-                  </span>
-                )}
-              </div>
-            </div>
-
-            <div>
-              <div style={{ color: 'var(--text-muted)', fontSize: '10.5px', fontFamily: 'var(--font-mono)', textTransform: 'uppercase' }}>
-                Typed Value
-              </div>
-              <div style={{ marginTop: '3px' }}>
-                <span className="value-pill">
-                  {memory.structured_value !== undefined && memory.structured_value !== null
-                    ? JSON.stringify(memory.structured_value)
-                    : memory.value || '—'}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Promote to Schema Tag if untagged */}
           {!memory.topic_id && onPromoteToTag && (
             <button
               type="button"
-              className="btn btn-secondary btn-xs w-full"
-              style={{ marginTop: '8px', justifyContent: 'center' }}
+              className="btn btn-secondary btn-xs"
+              style={{ marginTop: '10px' }}
               onClick={() => onPromoteToTag(memory)}
             >
               <Plus size={12} />
-              <span>Promote to Defined Schema Tag</span>
+              <span>Promote to Schema Tag</span>
             </button>
           )}
         </div>
       )}
 
-      {/* Quick Review Actions */}
+      {/* Verbatim Source Transcript with Teal Highlight */}
+      <div style={{ marginBottom: '16px' }}>
+        {evidenceList.length > 0 ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            {evidenceList.map((ev, idx) => (
+              <div key={ev.id || idx}>
+                {renderHighlightedEpisode(ev)}
+
+                <div
+                  className="mono"
+                  style={{
+                    marginTop: '8px',
+                    fontSize: '10.5px',
+                    color: 'var(--text-muted)',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: '6px',
+                  }}
+                >
+                  <span>
+                    EPISODE #{ev.episode_id}
+                    {ev.episode_source_type ? ` · ${ev.episode_source_type.toUpperCase()}` : ''}
+                  </span>
+                  {ev.content_hash && <span>SHA-256: {ev.content_hash.slice(0, 12)}…</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div
+            style={{
+              padding: '14px',
+              background: '#FFFFFF',
+              fontSize: '12px',
+              color: 'var(--text-muted)',
+            }}
+          >
+            No source transcript excerpt linked to this memory.
+          </div>
+        )}
+      </div>
+
+      {/* Review Decision Bar */}
       {onUpdateMemory && (
         <div
           style={{
             display: 'flex',
             gap: '8px',
-            marginBottom: '16px',
-            paddingBottom: '14px',
-            borderBottom: '1px solid var(--border-subtle)',
+            paddingTop: '14px',
+            borderTop: '1px solid var(--border-subtle)',
           }}
         >
           {memory.status !== 'confirmed' && (
@@ -415,8 +414,8 @@ export const EvidenceInspector: React.FC<EvidenceInspectorProps> = ({
               style={{ flex: 1, justifyContent: 'center' }}
               onClick={() => onUpdateMemory(memory.id, { status: 'confirmed' })}
             >
-              <CheckCircle2 size={14} />
-              <span>Approve &amp; Confirm</span>
+              <CheckCircle2 size={13} />
+              <span>Confirm Claim</span>
             </button>
           )}
           {memory.status !== 'rejected' && (
@@ -426,135 +425,30 @@ export const EvidenceInspector: React.FC<EvidenceInspectorProps> = ({
               style={{ flex: 1, justifyContent: 'center' }}
               onClick={() => onUpdateMemory(memory.id, { status: 'rejected' })}
             >
-              <XCircle size={14} />
-              <span>Reject Claim</span>
+              <XCircle size={13} />
+              <span>Reject</span>
             </button>
           )}
         </div>
       )}
 
-      {/* Verbatim Source Provenance */}
-      <div style={{ marginBottom: '14px' }}>
-        <div
-          style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: '11px',
-            fontWeight: 600,
-            textTransform: 'uppercase',
-            letterSpacing: '0.06em',
-            color: 'var(--text-secondary)',
-            marginBottom: '8px',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-          }}
-        >
-          <span>Source Provenance ({evidenceList.length})</span>
-          <span style={{ textTransform: 'capitalize', fontWeight: 500 }}>
-            {memory.claim_type} · {Math.round(memory.confidence * 100)}%
-          </span>
-        </div>
-
-        {evidenceList.length > 0 ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {evidenceList.map((ev, idx) => (
-              <div key={ev.id || idx}>
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    marginBottom: '6px',
-                    fontSize: '11.5px',
-                  }}
-                >
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontFamily: 'var(--font-mono)' }}>
-                    {ev.is_verified ? (
-                      <span className="badge badge-success">
-                        <ShieldCheck size={11} />
-                        Verified{ev.char_start != null ? ` [${ev.char_start}:${ev.char_end}]` : ''}
-                      </span>
-                    ) : (
-                      <span className="badge badge-warning">
-                        <AlertTriangle size={11} />
-                        Unverified Span
-                      </span>
-                    )}
-                    {ev.episode_source_type && (
-                      <span className="badge badge-neutral">{ev.episode_source_type}</span>
-                    )}
-                  </span>
-
-                  <span className="mono" style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                    Ep #{ev.episode_id}
-                  </span>
-                </div>
-
-                {renderHighlightedEpisode(ev)}
-
-                {ev.content_hash && (
-                  <div
-                    className="mono"
-                    style={{
-                      marginTop: '4px',
-                      fontSize: '10.5px',
-                      color: 'var(--text-muted)',
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                    }}
-                  >
-                    <span>SHA-256: {ev.content_hash.slice(0, 16)}…</span>
-                    {ev.episode_occurred_at && <span>{formatDate(ev.episode_occurred_at)}</span>}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div
-            style={{
-              padding: '14px',
-              background: 'var(--bg-well)',
-              borderRadius: 'var(--radius-sm)',
-              fontSize: '12px',
-              color: 'var(--text-muted)',
-            }}
-          >
-            No source evidence excerpt linked to this memory.
-          </div>
-        )}
-      </div>
-
-      {/* Temporal Validity Footer */}
+      {/* Temporal Metadata */}
       <div
+        className="mono"
         style={{
+          marginTop: '14px',
           paddingTop: '10px',
           borderTop: '1px solid var(--border-subtle)',
-          fontSize: '11.5px',
+          fontSize: '10.5px',
           color: 'var(--text-muted)',
           display: 'flex',
-          flexDirection: 'column',
-          gap: '4px',
-          fontFamily: 'var(--font-mono)',
+          justifyContent: 'space-between',
         }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <span>Valid From:</span>
-          <span>{formatDate(memory.valid_from || memory.created_at)}</span>
-        </div>
-        {memory.valid_to && (
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span>Valid To / Expires:</span>
-            <span>{formatDate(memory.valid_to)}</span>
-          </div>
-        )}
-        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <span>Recorded:</span>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-            <Clock size={11} />
-            {formatDate(memory.created_at)}
-          </span>
-        </div>
+        <span>
+          {memory.claim_type.toUpperCase()} · {Math.round(memory.confidence * 100)}%
+        </span>
+        <span>{formatDate(memory.valid_from || memory.created_at)}</span>
       </div>
     </div>
   );

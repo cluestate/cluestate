@@ -2,15 +2,10 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Search,
   RefreshCw,
-  CheckCircle2,
-  XCircle,
-  ShieldCheck,
-  AlertTriangle,
-  ClipboardCheck,
-  Tag,
 } from 'lucide-react';
 import type { Memory, MemoryStatus, Topic } from '../types';
 import { api } from '../api';
+import { MemoryCard } from '../components/MemoryCard';
 import { EvidenceInspector } from '../components/EvidenceInspector';
 import { TopicModal } from '../components/TopicModal';
 import { useToast } from '../components/Toast';
@@ -33,7 +28,6 @@ export const ReviewQueuePage: React.FC<ReviewQueuePageProps> = ({
   const [selectedMemory, setSelectedMemory] = useState<Memory | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Promote untagged discovery to defined schema tag modal
   const [promoteDraft, setPromoteDraft] = useState<Partial<Topic> | null>(null);
 
   const loadData = useCallback(async () => {
@@ -58,7 +52,7 @@ export const ReviewQueuePage: React.FC<ReviewQueuePageProps> = ({
         setSelectedMemory(null);
       }
     } catch (err: any) {
-      notify(err.message || 'Failed to load memories ledger', 'error');
+      notify(err.message || 'Failed to load memories queue', 'error');
     } finally {
       setIsLoading(false);
     }
@@ -147,59 +141,41 @@ export const ReviewQueuePage: React.FC<ReviewQueuePageProps> = ({
     loadData();
   };
 
-  const getStatusBadge = (st: MemoryStatus) => {
-    switch (st) {
-      case 'confirmed':
-        return <span className="badge badge-success">CONFIRMED</span>;
-      case 'active':
-        return <span className="badge badge-info">ACTIVE</span>;
-      case 'pending_review':
-        return <span className="badge badge-warning">NEEDS REVIEW</span>;
-      case 'rejected':
-        return <span className="badge badge-danger">REJECTED</span>;
-      case 'superseded':
-        return <span className="badge badge-neutral">SUPERSEDED</span>;
-    }
-  };
-
   return (
     <div className="page-container">
       {/* Header */}
       <div className="page-header">
         <div>
           <div className="page-eyebrow">HUMAN-IN-THE-LOOP VERIFICATION</div>
-          <h1 className="page-title">Review Queue &amp; Global Memory Ledger</h1>
-          <p className="page-subtitle">
-            Audit quarantined claims, sensitive clinical/financial updates, and unverified excerpts against original source transcripts.
-          </p>
+          <h1 className="page-title">Review Queue</h1>
         </div>
 
-        <button className="btn btn-secondary btn-sm" onClick={loadData}>
+        <button className="btn btn-ghost btn-sm" onClick={loadData}>
           <RefreshCw size={13} />
-          <span>Refresh Queue</span>
+          <span>Refresh</span>
         </button>
       </div>
 
-      {/* Filter Bar */}
+      {/* Borderless Filter Sub-Bar */}
       <div
         style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          gap: '12px',
-          marginBottom: '18px',
+          gap: '16px',
+          marginBottom: '24px',
           flexWrap: 'wrap',
         }}
       >
         <div className="segmented-control">
           {(
             [
-              { id: 'pending_review', label: 'Needs Review' },
-              { id: 'active', label: 'Active' },
-              { id: 'confirmed', label: 'Confirmed' },
-              { id: 'superseded', label: 'Superseded' },
-              { id: 'rejected', label: 'Rejected' },
-              { id: 'all', label: 'All Claims' },
+              { id: 'pending_review', label: 'NEEDS REVIEW' },
+              { id: 'active', label: 'ACTIVE' },
+              { id: 'confirmed', label: 'CONFIRMED' },
+              { id: 'superseded', label: 'SUPERSEDED' },
+              { id: 'rejected', label: 'REJECTED' },
+              { id: 'all', label: 'ALL CLAIMS' },
             ] as const
           ).map((tab) => (
             <button
@@ -213,15 +189,15 @@ export const ReviewQueuePage: React.FC<ReviewQueuePageProps> = ({
           ))}
         </div>
 
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '14px', alignItems: 'center', flexWrap: 'wrap' }}>
           <select
             className="input"
-            style={{ width: '200px', padding: '6px 28px 6px 10px', fontSize: '12.5px' }}
+            style={{ width: '190px', padding: '6px 28px 6px 10px', fontSize: '12px' }}
             value={topicFilter}
             onChange={(e) => setTopicFilter(e.target.value)}
           >
             <option value="all">All Schema Tags</option>
-            <option value="0">Untagged / Open Discoveries</option>
+            <option value="0">Untagged Discoveries</option>
             {topics.map((t) => (
               <option key={t.id} value={t.id}>
                 #{t.name}
@@ -229,12 +205,12 @@ export const ReviewQueuePage: React.FC<ReviewQueuePageProps> = ({
             ))}
           </select>
 
-          <div className="search-bar" style={{ width: '240px' }}>
+          <div className="search-bar" style={{ width: '220px' }}>
             <Search className="search-bar-icon" size={14} />
             <input
               type="text"
               className="input"
-              style={{ padding: '6px 10px 6px 32px', fontSize: '12.5px' }}
+              style={{ fontSize: '12.5px' }}
               placeholder="Filter claims or values…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -243,126 +219,43 @@ export const ReviewQueuePage: React.FC<ReviewQueuePageProps> = ({
         </div>
       </div>
 
-      {/* 2:1 Master-Detail Split */}
+      {/* 2:1 Open Split: Signal Strips on Left + Cool Ice Provenance Plane on Right */}
       <div className="split-ledger">
-        {/* Left 2/3: Claims Queue Table */}
-        <div className="table-container">
-          <table>
-            <thead>
-              <tr>
-                <th>Profile</th>
-                <th>Tag &amp; Value</th>
-                <th>Atomic Claim</th>
-                <th>Provenance</th>
-                <th>Status</th>
-                <th style={{ textAlign: 'right' }}>Decision</th>
-              </tr>
-            </thead>
-            <tbody>
-              {memories.map((mem) => {
-                const isSelected = selectedMemory?.id === mem.id;
-                const ev = mem.evidence && mem.evidence[0];
-                return (
-                  <tr
-                    key={mem.id}
-                    className={`clickable ${isSelected ? 'selected' : ''}`}
-                    onClick={() => setSelectedMemory(mem)}
-                  >
-                    <td style={{ whiteSpace: 'nowrap' }}>
-                      <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '13px' }}>
-                        {mem.entity_name || `Entity #${mem.entity_id}`}
-                      </div>
-                      {mem.entity_external_id && (
-                        <div className="mono" style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                          {mem.entity_external_id}
-                        </div>
-                      )}
-                    </td>
-                    <td>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
-                        {mem.topic_name ? (
-                          <span className="tag-pill">
-                            <Tag size={10} />
-                            {mem.topic_name}
-                          </span>
-                        ) : (
-                          <span className="badge badge-neutral">open_discovery</span>
-                        )}
-                        {mem.value && <span className="value-pill">= {mem.value}</span>}
-                      </div>
-                    </td>
-                    <td style={{ maxWidth: '300px' }}>
-                      <div style={{ color: 'var(--text-primary)', fontWeight: 500, lineHeight: 1.4 }}>
-                        {mem.claim}
-                      </div>
-                    </td>
-                    <td style={{ whiteSpace: 'nowrap' }}>
-                      {ev ? (
-                        ev.is_verified ? (
-                          <span className="badge badge-success">
-                            <ShieldCheck size={11} />
-                            [{ev.char_start}:{ev.char_end}]
-                          </span>
-                        ) : (
-                          <span className="badge badge-warning">
-                            <AlertTriangle size={11} />
-                            Unverified
-                          </span>
-                        )
-                      ) : (
-                        <span className="badge badge-neutral">No quote</span>
-                      )}
-                    </td>
-                    <td>{getStatusBadge(mem.status)}</td>
-                    <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
-                      <div style={{ display: 'inline-flex', gap: '4px' }}>
-                        {mem.status !== 'confirmed' && (
-                          <button
-                            type="button"
-                            className="btn btn-success btn-xs"
-                            title="Approve & Confirm"
-                            onClick={() => handleUpdateMemory(mem.id, { status: 'confirmed' })}
-                          >
-                            <CheckCircle2 size={12} />
-                            <span>Approve</span>
-                          </button>
-                        )}
-                        {mem.status !== 'rejected' && (
-                          <button
-                            type="button"
-                            className="btn btn-danger btn-xs"
-                            title="Reject claim"
-                            onClick={() => handleUpdateMemory(mem.id, { status: 'rejected' })}
-                          >
-                            <XCircle size={12} />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-
-          {memories.length === 0 && !isLoading && (
-            <div className="empty-state">
-              <ClipboardCheck className="empty-state-icon" />
-              <h4 className="empty-state-title">
-                {statusTab === 'pending_review'
-                  ? 'Review Queue is Clear'
-                  : 'No Claims Matching Filter'}
-              </h4>
-              <p className="empty-state-text">
-                {statusTab === 'pending_review'
-                  ? 'All sensitive, conflicting, or schema-quarantined claims have been reviewed.'
-                  : 'Switch status tabs or clear your search filter to inspect other workspace claims.'}
-              </p>
+        <div>
+          {memories.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {memories.map((mem) => (
+                <MemoryCard
+                  key={mem.id}
+                  memory={mem}
+                  isSelected={selectedMemory?.id === mem.id}
+                  onSelect={setSelectedMemory}
+                  showEntityName
+                  entityName={mem.entity_name || undefined}
+                  onSelectEntity={onSelectEntity}
+                  onUpdateStatus={(id, status) => handleUpdateMemory(id, { status })}
+                  onDelete={handleDeleteMemory}
+                />
+              ))}
             </div>
+          ) : (
+            !isLoading && (
+              <div className="surface-ice empty-state">
+                <h4 className="empty-state-title">
+                  {statusTab === 'pending_review'
+                    ? 'Review Queue is Clear'
+                    : 'No Claims Match Filter'}
+                </h4>
+                <p className="empty-state-text">
+                  {statusTab === 'pending_review'
+                    ? 'All clinical safety rules, conflicts, and schema-quarantined claims have been reviewed.'
+                    : 'Switch status tabs or clear your search filter to inspect other workspace claims.'}
+                </p>
+              </div>
+            )
           )}
         </div>
 
-        {/* Right 1/3: Live Evidence Inspector */}
         <EvidenceInspector
           memory={selectedMemory}
           topics={topics}

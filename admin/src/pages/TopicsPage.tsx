@@ -448,11 +448,10 @@ export const TopicsPage: React.FC<TopicsPageProps> = ({
 
         {policy.discovery_mode === 'strict' ? (
           <div
+            className="surface-ice"
             style={{
-              padding: '12px 14px',
-              background: 'var(--bg-well)',
-              borderRadius: 'var(--radius-sm)',
-              border: '1px solid var(--border-subtle)',
+              padding: '14px 16px',
+              borderLeft: '3px solid var(--signal-red)',
               fontSize: '12.5px',
               color: 'var(--text-secondary)',
             }}
@@ -461,14 +460,13 @@ export const TopicsPage: React.FC<TopicsPageProps> = ({
           </div>
         ) : (
           <div
+            className="surface-ice"
             style={{
-              padding: '14px 16px',
-              background: 'var(--bg-well)',
-              borderRadius: 'var(--radius-sm)',
-              border: '1px solid var(--border-subtle)',
+              padding: '16px 18px',
+              borderLeft: '3px solid var(--ultramarine)',
               display: 'grid',
               gridTemplateColumns: '1.6fr 1fr',
-              gap: '16px',
+              gap: '20px',
               alignItems: 'start',
             }}
           >
@@ -715,8 +713,9 @@ export const TopicsPage: React.FC<TopicsPageProps> = ({
             return (
               <div
                 key={bundle.id}
-                className="card"
+                className="surface-ice"
                 style={{
+                  borderLeft: allInstalled ? '3px solid var(--teal)' : '3px solid var(--ultramarine)',
                   display: 'flex',
                   flexDirection: 'column',
                   justifyContent: 'space-between',

@@ -1,14 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import {
   ArrowLeft,
-  FileText,
   Copy,
   Check,
   Send,
-  Clock,
-  Plus,
   Trash2,
-  Tag,
 } from 'lucide-react';
 import type { Entity, Episode, IntelResponse, Memory, MemoryStatus, Topic } from '../types';
 import { api } from '../api';
@@ -290,102 +286,105 @@ export const EntityDetailPage: React.FC<EntityDetailPageProps> = ({
         style={{ color: 'var(--text-secondary)', paddingLeft: 0 }}
       >
         <ArrowLeft size={13} />
-        <span>Back to Profiles Directory</span>
+        <span>All Profiles</span>
       </button>
 
-      {/* Profile Header Sheet */}
-      <div className="card mb-6">
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'flex-start',
-            flexWrap: 'wrap',
-            gap: '16px',
-          }}
-        >
-          <div style={{ display: 'flex', gap: '14px', alignItems: 'center' }}>
+      {/* Deep Obsidian Profile Focal Anchor (Landing-Page Hero Signature!) */}
+      <div className="profile-anchor">
+        <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+          <div className="profile-anchor-avatar">
+            {entity.name ? entity.name[0].toUpperCase() : 'P'}
+          </div>
+
+          <div>
             <div
               className="mono"
               style={{
-                width: '44px',
-                height: '44px',
-                borderRadius: '6px',
-                background: 'var(--text-primary)',
-                color: '#FAFAF8',
+                fontSize: '10.5px',
+                color: 'rgba(255,255,255,0.6)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.09em',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '18px',
-                fontWeight: 600,
+                gap: '8px',
+                marginBottom: '2px',
               }}
             >
-              {entity.name ? entity.name[0].toUpperCase() : 'P'}
+              <span>CLUESTATE LIVE PROFILE</span>
+              <span>·</span>
+              <span>{entity.external_id}</span>
+              <button
+                type="button"
+                onClick={handleCopyId}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'rgba(255,255,255,0.7)',
+                  cursor: 'pointer',
+                  padding: 0,
+                  display: 'inline-flex',
+                }}
+                title="Copy External ID"
+              >
+                {copiedId ? <Check size={11} color="#34D399" /> : <Copy size={11} />}
+              </button>
+              <span>·</span>
+              <span>{entity.entity_type.toUpperCase()}</span>
             </div>
 
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                <h1 style={{ fontSize: '21px', fontWeight: 600, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
-                  {entity.name || 'Unnamed Profile'}
-                </h1>
-                <span className="badge badge-neutral" style={{ textTransform: 'capitalize' }}>
-                  {entity.entity_type}
-                </span>
-                <span className="badge badge-success">
-                  {activeFactCount} Active Fact{activeFactCount === 1 ? '' : 's'}
-                </span>
-                {pendingReviewCount > 0 && (
-                  <span className="badge badge-warning">
-                    {pendingReviewCount} Needs Review
-                  </span>
-                )}
-              </div>
-
-              <div
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <h1
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  marginTop: '4px',
-                  fontSize: '12.5px',
-                  color: 'var(--text-secondary)',
+                  fontSize: '22px',
+                  fontWeight: 800,
+                  color: '#FFFFFF',
+                  letterSpacing: '-0.025em',
                 }}
               >
-                <span>
-                  External ID: <code className="tag-pill">{entity.external_id}</code>
-                </span>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-xs"
-                  onClick={handleCopyId}
-                  title="Copy External ID"
+                {entity.name || 'Unnamed Profile'}
+              </h1>
+
+              <span
+                className="mono"
+                style={{
+                  fontSize: '11px',
+                  color: '#4EE2C8',
+                  fontWeight: 600,
+                }}
+              >
+                ■ {activeFactCount} ACTIVE
+              </span>
+
+              {pendingReviewCount > 0 && (
+                <span
+                  className="mono"
+                  style={{
+                    fontSize: '11px',
+                    color: '#FF7A78',
+                    fontWeight: 600,
+                  }}
                 >
-                  {copiedId ? <Check size={12} color="var(--success)" /> : <Copy size={12} />}
-                </button>
-                <span>·</span>
-                <span className="mono" style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
-                  Tracked since {formatDate(entity.created_at)}
+                  ■ {pendingReviewCount} REVIEW
                 </span>
-              </div>
+              )}
             </div>
           </div>
-
-          <button className="btn btn-primary btn-sm" onClick={() => setActiveTab('ingest')}>
-            <Plus size={14} />
-            <span>Ingest Source Record</span>
-          </button>
         </div>
+
+        <button className="btn btn-primary btn-sm" onClick={() => setActiveTab('ingest')}>
+          <span>+ Ingest Record -&gt;</span>
+        </button>
       </div>
 
-      {/* Deterministic Compiled State Sheet (Key-Value Summary) */}
+      {/* Deterministic Compiled State Signal Grid */}
       {stateEntries.length > 0 && (
         <div className="state-sheet">
           <div className="state-sheet-header">
-            <span className="mono" style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-secondary)' }}>
-              Compiled Deterministic State ({stateEntries.length} Schema Tag{stateEntries.length === 1 ? '' : 's'})
+            <span className="card-title" style={{ margin: 0 }}>
+              COMPILED DETERMINISTIC STATE ({stateEntries.length})
             </span>
-            <span className="mono" style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-              Click any field to inspect backing source quote
+            <span className="mono" style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
+              CLICK ANY SIGNAL TO INSPECT SOURCE QUOTE
             </span>
           </div>
           <div className="state-sheet-grid">
@@ -396,11 +395,17 @@ export const EntityDetailPage: React.FC<EntityDetailPageProps> = ({
                   (m.status === 'active' || m.status === 'confirmed')
               );
               const topicMeta = topics.find((t) => t.name === key);
+              const isSafety = /(allergy|allergies|medical|restriction|condition|compliance)/.test(
+                key.toLowerCase()
+              );
               return (
                 <div
                   key={key}
                   className="state-field"
-                  style={{ cursor: matchingMem ? 'pointer' : 'default' }}
+                  style={{
+                    cursor: matchingMem ? 'pointer' : 'default',
+                    borderLeftColor: isSafety ? 'var(--signal-red)' : 'var(--teal)',
+                  }}
                   onClick={() => {
                     if (matchingMem) {
                       setSelectedMemory(matchingMem);
@@ -409,23 +414,15 @@ export const EntityDetailPage: React.FC<EntityDetailPageProps> = ({
                   }}
                 >
                   <div className="state-field-key">
-                    <Tag size={10} />
-                    <span>{topicMeta?.label || key}</span>
-                    <span style={{ opacity: 0.6 }}>({key})</span>
+                    <span>{topicMeta?.label || key.replace(/_/g, ' ')}</span>
                   </div>
-                  <div className="state-field-val mono">
+                  <div className="state-field-val">
                     {typeof val === 'boolean' ? (
-                      <span className={`badge ${val ? 'badge-success' : 'badge-neutral'}`}>
-                        {val ? 'true (Yes)' : 'false (No)'}
+                      <span style={{ color: val ? 'var(--teal)' : 'var(--text-secondary)' }}>
+                        {val ? 'True (Yes)' : 'False (No)'}
                       </span>
                     ) : Array.isArray(val) ? (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '2px' }}>
-                        {val.map((item, i) => (
-                          <span key={i} className="value-pill" style={{ fontSize: '11px' }}>
-                            {String(item)}
-                          </span>
-                        ))}
-                      </div>
+                      <span>{val.map(String).join(' · ')}</span>
                     ) : (
                       <span>
                         {String(val)}
@@ -447,7 +444,7 @@ export const EntityDetailPage: React.FC<EntityDetailPageProps> = ({
           className={`tab ${activeTab === 'memories' ? 'active' : ''}`}
           onClick={() => setActiveTab('memories')}
         >
-          <span>State Ledger ({memories.length})</span>
+          <span>Signal Strips ({memories.length})</span>
         </button>
 
         <button
@@ -455,7 +452,6 @@ export const EntityDetailPage: React.FC<EntityDetailPageProps> = ({
           className={`tab ${activeTab === 'timeline' ? 'active' : ''}`}
           onClick={() => setActiveTab('timeline')}
         >
-          <Clock size={14} />
           <span>Source Episodes ({episodes.length})</span>
         </button>
 
@@ -464,7 +460,6 @@ export const EntityDetailPage: React.FC<EntityDetailPageProps> = ({
           className={`tab ${activeTab === 'intel' ? 'active' : ''}`}
           onClick={() => setActiveTab('intel')}
         >
-          <FileText size={14} />
           <span>Prompt &amp; JSON Output</span>
         </button>
 
@@ -473,44 +468,40 @@ export const EntityDetailPage: React.FC<EntityDetailPageProps> = ({
           className={`tab ${activeTab === 'ingest' ? 'active' : ''}`}
           onClick={() => setActiveTab('ingest')}
         >
-          <Plus size={14} />
-          <span>Ingest Record</span>
+          <span>+ Ingest Record</span>
         </button>
       </div>
 
-      {/* TAB 1: MEMORIES + 2:1 LIVE EVIDENCE INSPECTOR */}
+      {/* TAB 1: SIGNAL STRIPS + 2:1 COOL ICE PROVENANCE INSPECTOR */}
       {activeTab === 'memories' && (
         <div>
-          {/* Filters */}
+          {/* Borderless Filters */}
           <div
             style={{
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              marginBottom: '14px',
+              marginBottom: '18px',
               flexWrap: 'wrap',
-              gap: '10px',
+              gap: '12px',
             }}
           >
-            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
-              <span className="mono" style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                TAG:
-              </span>
+            <div className="segmented-control">
               <button
                 type="button"
-                className={`btn btn-xs ${selectedTopic === 'all' ? 'btn-primary' : 'btn-secondary'}`}
+                className={`segmented-option ${selectedTopic === 'all' ? 'active' : ''}`}
                 onClick={() => setSelectedTopic('all')}
               >
-                All Tags
+                ALL TAGS
               </button>
               {uniqueTopics.map((top) => (
                 <button
                   key={top}
                   type="button"
-                  className={`btn btn-xs ${selectedTopic === top ? 'btn-primary' : 'btn-secondary'}`}
+                  className={`segmented-option ${selectedTopic === top ? 'active' : ''}`}
                   onClick={() => setSelectedTopic(top)}
                 >
-                  #{top}
+                  {top.toUpperCase()}
                 </button>
               ))}
             </div>
@@ -523,7 +514,7 @@ export const EntityDetailPage: React.FC<EntityDetailPageProps> = ({
                     type="button"
                     className={`segmented-option ${statusFilter === st ? 'active' : ''}`}
                     onClick={() => setStatusFilter(st)}
-                    style={{ textTransform: 'capitalize', fontSize: '11.5px', padding: '4px 9px' }}
+                    style={{ textTransform: 'uppercase' }}
                   >
                     {st === 'pending_review' ? 'Needs Review' : st}
                   </button>
@@ -535,7 +526,7 @@ export const EntityDetailPage: React.FC<EntityDetailPageProps> = ({
           <div className="split-ledger">
             <div>
               {filteredMemories.length > 0 ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   {filteredMemories.map((mem) => (
                     <MemoryCard
                       key={mem.id}
@@ -548,17 +539,16 @@ export const EntityDetailPage: React.FC<EntityDetailPageProps> = ({
                   ))}
                 </div>
               ) : (
-                <div className="card empty-state">
-                  <h4 className="empty-state-title">No State Claims Match Filter</h4>
+                <div className="surface-ice empty-state">
+                  <h4 className="empty-state-title">No Signal Strips Match Filter</h4>
                   <p className="empty-state-text">
                     {memories.length === 0
                       ? 'No state records have been extracted for this profile yet.'
-                      : 'Clear the active tag or status filter to view all recorded claims.'}
+                      : 'Reset the active tag or status filter to view all claims.'}
                   </p>
                   {memories.length === 0 && (
                     <button className="btn btn-primary btn-sm" onClick={() => setActiveTab('ingest')}>
-                      <Plus size={14} />
-                      <span>Ingest First Record</span>
+                      <span>+ Ingest First Record -&gt;</span>
                     </button>
                   )}
                 </div>
@@ -578,49 +568,37 @@ export const EntityDetailPage: React.FC<EntityDetailPageProps> = ({
 
       {/* TAB 2: EPISODE TIMELINE */}
       {activeTab === 'timeline' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
           {episodes.map((ep) => (
-            <div key={ep.id} className="card">
+            <div key={ep.id} className="signal-strip">
               <div
                 style={{
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
-                  marginBottom: '10px',
+                  marginBottom: '8px',
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span className="badge badge-info" style={{ textTransform: 'uppercase' }}>
-                    {ep.source_type}
-                  </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span className="badge badge-info">{ep.source_type}</span>
                   {ep.source_description && (
-                    <span style={{ fontSize: '13.5px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    <span style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-primary)' }}>
                       {ep.source_description}
                     </span>
                   )}
                   <span className="mono" style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                    Episode #{ep.id}
+                    EPISODE #{ep.id}
                   </span>
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <span
-                    className="mono"
-                    style={{
-                      fontSize: '11.5px',
-                      color: 'var(--text-muted)',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                    }}
-                  >
-                    <Clock size={12} />
+                  <span className="mono" style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
                     {formatDate(ep.occurred_at || ep.created_at)}
                   </span>
                   <button
                     type="button"
                     className="btn btn-ghost btn-xs"
-                    style={{ color: 'var(--danger)' }}
+                    style={{ color: 'var(--signal-red)' }}
                     onClick={() => handleDeleteEpisode(ep.id)}
                     title="Delete episode and orphaned claims"
                   >
@@ -629,16 +607,17 @@ export const EntityDetailPage: React.FC<EntityDetailPageProps> = ({
                 </div>
               </div>
 
-              <div className="episode-reader">{ep.content}</div>
+              <div className="episode-reader" style={{ background: 'var(--bg-ice)', borderLeft: 'none' }}>
+                {ep.content}
+              </div>
             </div>
           ))}
 
           {episodes.length === 0 && (
-            <div className="card empty-state">
-              <FileText className="empty-state-icon" />
+            <div className="surface-ice empty-state">
               <h4 className="empty-state-title">No Source Episodes Recorded</h4>
               <p className="empty-state-text">
-                Episodes store the immutable raw transcript, clinical note, or message with SHA-256 content verification.
+                Episodes store the immutable raw transcript, clinical note, or message with SHA-256 verification.
               </p>
             </div>
           )}
@@ -647,41 +626,41 @@ export const EntityDetailPage: React.FC<EntityDetailPageProps> = ({
 
       {/* TAB 3: PROMPT & COMPILED JSON STATE */}
       {activeTab === 'intel' && (
-        <div className="card">
+        <div>
           <div
             style={{
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              marginBottom: '14px',
+              marginBottom: '16px',
               flexWrap: 'wrap',
               gap: '12px',
             }}
           >
             <div>
               <h3 className="card-title" style={{ marginBottom: '2px' }}>
-                Compiled Entity Intelligence Output
+                COMPILED ENTITY INTELLIGENCE OUTPUT
               </h3>
-              <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)' }}>
-                Use <code>intel.state</code> for deterministic backend logic or <code>intel.formatted_prompt</code> for LLM context injection.
+              <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                Use <code>intel.state</code> for deterministic backend logic or <code>intel.formatted_prompt</code> for LLM system context.
               </p>
             </div>
 
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: '14px', alignItems: 'center' }}>
               <div className="segmented-control">
                 <button
                   type="button"
                   className={`segmented-option ${intelViewMode === 'prompt' ? 'active' : ''}`}
                   onClick={() => setIntelViewMode('prompt')}
                 >
-                  System Prompt Block
+                  SYSTEM PROMPT
                 </button>
                 <button
                   type="button"
                   className={`segmented-option ${intelViewMode === 'json' ? 'active' : ''}`}
                   onClick={() => setIntelViewMode('json')}
                 >
-                  Compiled JSON State
+                  JSON STATE
                 </button>
               </div>
 
@@ -697,29 +676,14 @@ export const EntityDetailPage: React.FC<EntityDetailPageProps> = ({
               ? JSON.stringify(intel?.state || {}, null, 2)
               : intel?.formatted_prompt || 'No formatted state available.'}
           </pre>
-
-          <div
-            className="mono"
-            style={{
-              marginTop: '12px',
-              display: 'flex',
-              gap: '20px',
-              fontSize: '11.5px',
-              color: 'var(--text-muted)',
-            }}
-          >
-            <span>~{Math.round((intel?.formatted_prompt?.length || 0) / 4)} tokens</span>
-            <span>Active Claims: {intel?.total_memories ?? 0}</span>
-            <span>Episodes: {intel?.total_episodes ?? 0}</span>
-          </div>
         </div>
       )}
 
       {/* TAB 4: DIRECT INGESTION */}
       {activeTab === 'ingest' && (
-        <div className="card" style={{ maxWidth: '720px' }}>
-          <h3 className="card-title">Ingest Source Record for {entity.name}</h3>
-          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '18px' }}>
+        <div style={{ maxWidth: '680px' }}>
+          <h3 className="card-title">INGEST SOURCE RECORD FOR {entity.name.toUpperCase()}</h3>
+          <p style={{ fontSize: '13.5px', color: 'var(--text-secondary)', marginBottom: '20px' }}>
             Paste any consultation note, dialogue transcript, or intake record. The engine will extract atomic claims, verify character spans, and resolve state transitions.
           </p>
 
@@ -775,7 +739,7 @@ export const EntityDetailPage: React.FC<EntityDetailPageProps> = ({
               <label className="input-label">Source Content / Transcript *</label>
               <textarea
                 className="input"
-                style={{ minHeight: '160px', fontSize: '13px' }}
+                style={{ minHeight: '160px', fontSize: '13.5px' }}
                 placeholder={`Example:\nPatient states she has been strictly vegan for the past 4 years and has a documented penicillin allergy. Prefers appointment reminders via SMS.`}
                 value={ingestText}
                 onChange={(e) => setIngestText(e.target.value)}
@@ -783,7 +747,7 @@ export const EntityDetailPage: React.FC<EntityDetailPageProps> = ({
               />
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
               <button
                 type="submit"
                 className="btn btn-primary"
@@ -796,8 +760,8 @@ export const EntityDetailPage: React.FC<EntityDetailPageProps> = ({
                   </>
                 ) : (
                   <>
-                    <Send size={14} />
-                    <span>Extract &amp; Update Profile State</span>
+                    <Send size={13} />
+                    <span>Extract &amp; Update State -&gt;</span>
                   </>
                 )}
               </button>

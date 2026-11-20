@@ -14,20 +14,19 @@ export const BrandMark: React.FC<BrandMarkProps> = ({ size = 28 }) => {
       xmlns="http://www.w3.org/2000/svg"
       style={{ flexShrink: 0, display: 'block' }}
     >
-      <rect width="32" height="32" rx="5" fill="#161614" />
       <path
-        d="M12.5 8.5H8.5V23.5H12.5"
-        stroke="#F7F6F2"
-        strokeWidth="2.2"
+        d="M12.5 6.5H6.5V25.5H12.5"
+        stroke="#3D2CE0"
+        strokeWidth="2.8"
         strokeLinecap="square"
       />
       <path
-        d="M19.5 8.5H23.5V23.5H19.5"
-        stroke="#F7F6F2"
-        strokeWidth="2.2"
+        d="M19.5 6.5H25.5V25.5H19.5"
+        stroke="#3D2CE0"
+        strokeWidth="2.8"
         strokeLinecap="square"
       />
-      <circle cx="16" cy="16" r="2.8" fill="#C64322" />
+      <rect x="13" y="13" width="6" height="6" fill="#E53935" />
     </svg>
   );
 };

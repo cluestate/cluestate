@@ -1,12 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Users,
   Search,
-  UserPlus,
   Trash2,
-  ArrowUpRight,
   Copy,
   Check,
+  ArrowRight,
 } from 'lucide-react';
 import type { Entity } from '../types';
 import { api } from '../api';
@@ -98,30 +96,26 @@ export const EntitiesPage: React.FC<EntitiesPageProps> = ({
       <div className="page-header">
         <div>
           <div className="page-eyebrow">ENTITY DIRECTORY</div>
-          <h1 className="page-title">Tracked Profiles &amp; Entities</h1>
-          <p className="page-subtitle">
-            Patients, clients, users, and organizations with schema-enforced state ledgers.
-          </p>
+          <h1 className="page-title">Profiles</h1>
         </div>
 
         <button className="btn btn-primary btn-sm" onClick={onOpenNewEntity}>
-          <UserPlus size={14} />
-          <span>New Profile</span>
+          <span>+ New Profile -&gt;</span>
         </button>
       </div>
 
-      {/* Filter / Search Bar */}
+      {/* Borderless Search & Filter Sub-Bar (Zero Boxes!) */}
       <div
         style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          gap: '12px',
-          marginBottom: '18px',
+          gap: '20px',
+          marginBottom: '24px',
           flexWrap: 'wrap',
         }}
       >
-        <div className="search-bar" style={{ flex: 1, minWidth: '260px', maxWidth: '420px' }}>
+        <div className="search-bar" style={{ flex: 1, minWidth: '240px', maxWidth: '380px' }}>
           <Search className="search-bar-icon" size={14} />
           <input
             type="text"
@@ -140,7 +134,7 @@ export const EntitiesPage: React.FC<EntitiesPageProps> = ({
                 type="button"
                 className={`segmented-option ${typeFilter === type ? 'active' : ''}`}
                 onClick={() => setTypeFilter(type)}
-                style={{ textTransform: 'capitalize' }}
+                style={{ textTransform: 'uppercase' }}
               >
                 {type === 'all' ? 'All Profiles' : type}
               </button>
@@ -149,17 +143,17 @@ export const EntitiesPage: React.FC<EntitiesPageProps> = ({
         </div>
       </div>
 
-      {/* Entities Table */}
+      {/* Borderless Typographic Directory (Zero Pill/Button/Avatar Boxes!) */}
       <div className="table-container">
         <table>
           <thead>
             <tr>
-              <th>Profile Name</th>
-              <th>External Identifier</th>
+              <th>Profile</th>
+              <th>External ID</th>
               <th>Classification</th>
-              <th>Active State Facts</th>
+              <th>Active State</th>
               <th>Tracked Since</th>
-              <th style={{ textAlign: 'right' }}>Actions</th>
+              <th style={{ textAlign: 'right' }}></th>
             </tr>
           </thead>
           <tbody>
@@ -170,43 +164,24 @@ export const EntitiesPage: React.FC<EntitiesPageProps> = ({
                 onClick={() => onSelectEntity(entity.id)}
               >
                 <td>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <div
-                      className="mono"
-                      style={{
-                        width: '28px',
-                        height: '28px',
-                        borderRadius: '4px',
-                        background: 'var(--bg-well)',
-                        border: '1px solid var(--border-subtle)',
-                        color: 'var(--text-primary)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontWeight: 600,
-                        fontSize: '12px',
-                      }}
-                    >
-                      {entity.name ? entity.name[0].toUpperCase() : 'P'}
-                    </div>
-                    <div>
-                      <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                        {entity.name || 'Unnamed Profile'}
-                      </div>
-                    </div>
+                  <div style={{ fontWeight: 700, fontSize: '15px', color: 'var(--text-primary)' }}>
+                    {entity.name || 'Unnamed Profile'}
                   </div>
                 </td>
                 <td>
-                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                    <code className="tag-pill">{entity.external_id}</code>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                    <span className="mono" style={{ fontSize: '12.5px', color: 'var(--text-secondary)' }}>
+                      {entity.external_id}
+                    </span>
                     <button
                       type="button"
-                      className="btn btn-ghost btn-xs"
+                      className="btn btn-ghost btn-xs row-action-reveal"
                       title="Copy External ID"
                       onClick={(e) => handleCopyId(entity.external_id, e)}
+                      style={{ padding: '2px 4px' }}
                     >
                       {copiedId === entity.external_id ? (
-                        <Check size={12} color="var(--success)" />
+                        <Check size={12} color="var(--teal)" />
                       ) : (
                         <Copy size={12} color="var(--text-muted)" />
                       )}
@@ -214,16 +189,14 @@ export const EntitiesPage: React.FC<EntitiesPageProps> = ({
                   </div>
                 </td>
                 <td>
-                  <span className="badge badge-neutral" style={{ textTransform: 'capitalize' }}>
-                    {entity.entity_type}
-                  </span>
+                  <span className="badge badge-info">{entity.entity_type}</span>
                 </td>
                 <td>
-                  <span className="mono" style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                  <span style={{ fontWeight: 800, fontSize: '15px', color: 'var(--text-primary)' }}>
                     {entity.memory_count ?? 0}
                   </span>
-                  <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginLeft: '5px' }}>
-                    active
+                  <span className="mono" style={{ fontSize: '11px', color: 'var(--text-muted)', marginLeft: '6px' }}>
+                    facts
                   </span>
                 </td>
                 <td>
@@ -232,22 +205,32 @@ export const EntitiesPage: React.FC<EntitiesPageProps> = ({
                   </span>
                 </td>
                 <td style={{ textAlign: 'right' }}>
-                  <div style={{ display: 'inline-flex', gap: '6px' }}>
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-xs"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onSelectEntity(entity.id);
+                  <div
+                    className="row-action-reveal"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                    }}
+                  >
+                    <span
+                      className="mono"
+                      style={{
+                        fontSize: '11.5px',
+                        fontWeight: 600,
+                        color: 'var(--ultramarine)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
                       }}
                     >
-                      <span>Open Ledger</span>
-                      <ArrowUpRight size={12} />
-                    </button>
+                      <span>Inspect</span>
+                      <ArrowRight size={12} />
+                    </span>
                     <button
                       type="button"
                       className="btn btn-ghost btn-xs"
-                      style={{ color: 'var(--danger)' }}
+                      style={{ color: 'var(--signal-red)' }}
                       onClick={(e) => handleDeleteEntity(entity, e)}
                       title="Delete Profile"
                     >
@@ -261,8 +244,7 @@ export const EntitiesPage: React.FC<EntitiesPageProps> = ({
         </table>
 
         {filteredEntities.length === 0 && !isLoading && (
-          <div className="empty-state">
-            <Users className="empty-state-icon" />
+          <div className="surface-ice empty-state" style={{ marginTop: '12px' }}>
             <h4 className="empty-state-title">No Profiles Found</h4>
             <p className="empty-state-text">
               {search
@@ -270,8 +252,7 @@ export const EntitiesPage: React.FC<EntitiesPageProps> = ({
                 : 'Create your first profile or ingest a record to start tracking entity state.'}
             </p>
             <button className="btn btn-primary btn-sm" onClick={onOpenNewEntity}>
-              <UserPlus size={14} />
-              <span>Create First Profile</span>
+              <span>+ New Profile -&gt;</span>
             </button>
           </div>
         )}

@@ -224,11 +224,11 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
         ))}
       </div>
 
-      {/* 2-Column Layout */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1.15fr 1.35fr', gap: '20px', alignItems: 'start' }}>
-        {/* Left Column: Input Form */}
-        <div className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+      {/* 2-Column Open Split */}
+      <div className="split-ledger">
+        {/* Left Column: Input Form on Pure White */}
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
             <h3 className="card-title" style={{ margin: 0 }}>
               Source Transcript / Unstructured Input
             </h3>
@@ -341,8 +341,8 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
           {renderHighlightedInput()}
         </div>
 
-        {/* Right Column: Live Extraction Results */}
-        <div className="card">
+        {/* Right Column: Live Extraction Results on Cool Ice Plane */}
+        <div className="inspector-plane">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
             <h3 className="card-title" style={{ margin: 0 }}>
               Extraction &amp; Schema Resolution Output
@@ -362,38 +362,40 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
 
           {result ? (
             <div>
-              {/* Compact Metric Strip */}
+              {/* Inline Editorial Metrics */}
               <div
                 style={{
                   display: 'grid',
                   gridTemplateColumns: 'repeat(3, 1fr)',
-                  gap: '10px',
+                  borderBottom: '1px solid var(--border-subtle)',
+                  paddingBottom: '14px',
                   marginBottom: '16px',
+                  gap: '16px',
                 }}
               >
-                <div style={{ padding: '10px 14px', background: 'var(--bg-well)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
-                  <div className="mono" style={{ fontSize: '20px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                <div>
+                  <div className="mono" style={{ fontSize: '24px', fontWeight: 700, color: 'var(--text-primary)' }}>
                     {result.memories_extracted}
                   </div>
-                  <div className="mono" style={{ fontSize: '10.5px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                  <div className="mono" style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
                     Claims Resolved
                   </div>
                 </div>
 
-                <div style={{ padding: '10px 14px', background: 'var(--bg-well)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
-                  <div className="mono" style={{ fontSize: '20px', fontWeight: 600, color: 'var(--success)' }}>
+                <div>
+                  <div className="mono" style={{ fontSize: '24px', fontWeight: 700, color: 'var(--teal)' }}>
                     {result.memories_new}
                   </div>
-                  <div className="mono" style={{ fontSize: '10.5px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                  <div className="mono" style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
                     New Records
                   </div>
                 </div>
 
-                <div style={{ padding: '10px 14px', background: 'var(--bg-well)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
-                  <div className="mono" style={{ fontSize: '20px', fontWeight: 600, color: 'var(--info)' }}>
+                <div>
+                  <div className="mono" style={{ fontSize: '24px', fontWeight: 700, color: 'var(--ultramarine)' }}>
                     {result.memories_updated}
                   </div>
-                  <div className="mono" style={{ fontSize: '10.5px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                  <div className="mono" style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
                     Updated / Supported
                   </div>
                 </div>
@@ -414,7 +416,7 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
                 </div>
               )}
 
-              {/* Extracted Claims List */}
+              {/* Extracted Claims List as Signal Strips */}
               <div className="mono" style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px', textTransform: 'uppercase' }}>
                 Extracted Atomic Claims (Click to highlight span)
               </div>
@@ -422,16 +424,19 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
                 {result.memories.map((mem, idx) => {
                   const ev = mem.evidence && mem.evidence[0];
                   const isSelected = activeClaimIdx === idx;
+                  const stripClass =
+                    mem.status === 'pending_review'
+                      ? 'signal-strip-red'
+                      : ev?.is_verified
+                        ? 'signal-strip-teal'
+                        : 'signal-strip-ultramarine';
                   return (
                     <div
                       key={mem.id || idx}
                       onClick={() => setActiveClaimIdx(idx)}
+                      className={`signal-strip ${stripClass} ${isSelected ? 'selected' : ''}`}
                       style={{
-                        padding: '12px 14px',
-                        background: isSelected ? '#FDFCFA' : 'var(--bg-well)',
-                        borderRadius: 'var(--radius-sm)',
-                        border: `1px solid ${isSelected ? 'var(--text-primary)' : 'var(--border-subtle)'}`,
-                        cursor: 'pointer',
+                        background: isSelected ? '#FFFFFF' : 'rgba(255, 255, 255, 0.7)',
                       }}
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' }}>

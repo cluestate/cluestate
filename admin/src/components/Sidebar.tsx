@@ -1,12 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  LayoutGrid,
-  ClipboardCheck,
-  Users,
-  SlidersHorizontal,
-  FlaskConical,
-  KeyRound,
-  Plus,
   LogOut,
   ChevronDown,
   Check,
@@ -58,20 +51,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
   }, []);
 
   const operationsNav = [
-    { id: 'dashboard', label: 'Overview', icon: LayoutGrid },
+    { id: 'dashboard', label: 'Overview' },
     {
       id: 'review',
       label: 'Review Queue',
-      icon: ClipboardCheck,
       badge: pendingReviewCount > 0 ? pendingReviewCount : undefined,
     },
-    { id: 'entities', label: 'Profiles & Entities', icon: Users },
-    { id: 'topics', label: 'Memory Schema', icon: SlidersHorizontal },
+    { id: 'entities', label: 'Profiles' },
+    { id: 'topics', label: 'Memory Schema' },
   ];
 
   const engineeringNav = [
-    { id: 'playground', label: 'Extraction Bench', icon: FlaskConical },
-    { id: 'settings', label: 'Workspace & API', icon: KeyRound },
+    { id: 'playground', label: 'Extraction Bench' },
+    { id: 'settings', label: 'Workspace & API' },
   ];
 
   const isHealthy = health?.status === 'ok';
@@ -83,33 +75,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
     <aside className="sidebar">
       {/* Brand Header */}
       <div className="sidebar-header">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div className="sidebar-logo">
-            <BrandMark size={28} />
-            <div>
-              <div className="sidebar-logo-text">ClueState</div>
-              <div className="sidebar-logo-version">v{versionStr} · Ledger</div>
-            </div>
+        <div className="sidebar-logo">
+          <BrandMark size={26} />
+          <div>
+            <div className="sidebar-logo-text">ClueState</div>
+            <div className="sidebar-logo-version">v{versionStr}</div>
           </div>
-
-          <button
-            type="button"
-            className="btn btn-secondary btn-xs"
-            onClick={onOpenIngest}
-            title="Ingest new interaction or record"
-          >
-            <Plus size={12} />
-            <span>Ingest</span>
-          </button>
         </div>
       </div>
 
-      {/* Workspace Switcher */}
+      {/* Borderless Workspace Selector */}
       {workspace && (
         <div
           ref={dropdownRef}
           style={{
-            padding: '10px 10px 4px',
+            marginBottom: '18px',
             position: 'relative',
           }}
         >
@@ -118,10 +98,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
             onClick={() => setWsDropdownOpen(!wsDropdownOpen)}
             style={{
               width: '100%',
-              padding: '8px 10px',
-              background: 'var(--bg-surface)',
-              borderRadius: 'var(--radius-sm)',
-              border: '1px solid var(--border-subtle)',
+              padding: '6px 0',
+              background: 'transparent',
+              border: 'none',
+              borderBottom: '1px solid var(--border-subtle)',
               display: 'flex',
               alignItems: 'center',
               gap: '8px',
@@ -132,16 +112,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
           >
             <div
               style={{
-                width: '22px',
-                height: '22px',
-                borderRadius: '4px',
-                background: 'var(--text-primary)',
-                color: '#FAFAF8',
+                width: '18px',
+                height: '18px',
+                background: 'var(--teal)',
+                color: '#FFFFFF',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontSize: '11px',
-                fontWeight: 600,
+                fontSize: '10px',
+                fontWeight: 700,
                 fontFamily: 'var(--font-mono)',
                 flexShrink: 0,
               }}
@@ -151,8 +130,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div style={{ flex: 1, overflow: 'hidden' }}>
               <div
                 style={{
-                  fontSize: '12.5px',
-                  fontWeight: 600,
+                  fontSize: '13px',
+                  fontWeight: 700,
                   color: 'var(--text-primary)',
                   whiteSpace: 'nowrap',
                   overflow: 'hidden',
@@ -161,18 +140,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
               >
                 {workspace.name}
               </div>
-              <div
-                className="mono"
-                style={{
-                  fontSize: '10.5px',
-                  color: 'var(--text-muted)',
-                  textTransform: 'uppercase',
-                }}
-              >
-                {workspace.role || 'owner'} · {workspace.slug}
-              </div>
             </div>
-            <ChevronDown size={14} color="var(--text-muted)" />
+            <ChevronDown size={13} color="var(--text-muted)" />
           </button>
 
           {wsDropdownOpen && (
@@ -180,12 +149,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
               style={{
                 position: 'absolute',
                 top: '100%',
-                left: '10px',
-                right: '10px',
+                left: 0,
+                right: 0,
                 marginTop: '4px',
-                background: 'var(--bg-surface)',
-                border: '1px solid var(--border-primary)',
-                borderRadius: 'var(--radius-md)',
+                background: '#FFFFFF',
+                borderTop: '2px solid var(--ultramarine)',
                 boxShadow: 'var(--shadow-md)',
                 zIndex: 100,
                 padding: '6px',
@@ -198,7 +166,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   color: 'var(--text-muted)',
                   textTransform: 'uppercase',
                   padding: '4px 8px',
-                  letterSpacing: '0.06em',
+                  letterSpacing: '0.08em',
                 }}
               >
                 Workspaces ({workspaces.length || 1})
@@ -216,9 +184,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       }}
                       style={{
                         width: '100%',
-                        background: isCurrent ? 'var(--bg-well)' : 'transparent',
+                        background: isCurrent ? 'var(--bg-ice)' : 'transparent',
                         border: 'none',
-                        borderRadius: 'var(--radius-xs)',
                         padding: '7px 8px',
                         display: 'flex',
                         alignItems: 'center',
@@ -233,7 +200,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         <div
                           style={{
                             fontSize: '12.5px',
-                            fontWeight: isCurrent ? 600 : 500,
+                            fontWeight: isCurrent ? 700 : 500,
                             color: 'var(--text-primary)',
                             whiteSpace: 'nowrap',
                             overflow: 'hidden',
@@ -242,11 +209,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         >
                           {ws.name}
                         </div>
-                        <div className="mono" style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
+                        <div className="mono" style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
                           {ws.role || 'member'}
                         </div>
                       </div>
-                      {isCurrent && <Check size={13} color="var(--text-primary)" />}
+                      {isCurrent && <Check size={13} color="var(--ultramarine)" />}
                     </button>
                   );
                 })}
@@ -264,15 +231,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       width: '100%',
                       background: 'transparent',
                       border: 'none',
-                      borderRadius: 'var(--radius-xs)',
                       padding: '7px 8px',
                       display: 'flex',
                       alignItems: 'center',
                       gap: '6px',
                       cursor: 'pointer',
                       fontSize: '12px',
-                      fontWeight: 600,
-                      color: 'var(--text-primary)',
+                      fontWeight: 700,
+                      color: 'var(--ultramarine)',
                       fontFamily: 'inherit',
                     }}
                   >
@@ -286,11 +252,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       )}
 
-      {/* Navigation Links */}
+      {/* Navigation Links (Pure Typography + 6px Ultramarine Square Indicator) */}
       <div className="sidebar-nav">
         <div className="nav-section-label">Operations</div>
         {operationsNav.map((item) => {
-          const Icon = item.icon;
           const isActive =
             currentTab === item.id ||
             (item.id === 'entities' && currentTab === 'entity_detail');
@@ -301,9 +266,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               className={`nav-item ${isActive ? 'active' : ''}`}
               onClick={() => onSelectTab(item.id)}
             >
-              <span className="nav-item-icon">
-                <Icon size={16} strokeWidth={1.85} />
-              </span>
+              <span className="nav-pip" />
               <span>{item.label}</span>
               {item.badge !== undefined && <span className="nav-badge">{item.badge}</span>}
             </button>
@@ -312,7 +275,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         <div className="nav-section-label">Engineering</div>
         {engineeringNav.map((item) => {
-          const Icon = item.icon;
           const isActive = currentTab === item.id;
           return (
             <button
@@ -321,33 +283,40 @@ export const Sidebar: React.FC<SidebarProps> = ({
               className={`nav-item ${isActive ? 'active' : ''}`}
               onClick={() => onSelectTab(item.id)}
             >
-              <span className="nav-item-icon">
-                <Icon size={16} strokeWidth={1.85} />
-              </span>
+              <span className="nav-pip" />
               <span>{item.label}</span>
             </button>
           );
         })}
+
+        <div style={{ marginTop: '20px' }}>
+          <button
+            type="button"
+            className="btn btn-primary btn-sm w-full"
+            style={{ justifyContent: 'center' }}
+            onClick={onOpenIngest}
+          >
+            <span>+ Ingest Record -&gt;</span>
+          </button>
+        </div>
       </div>
 
       {/* Footer / System Status & Account */}
       <div className="sidebar-footer">
-        <div className="sidebar-health" style={{ marginBottom: user ? '10px' : 0 }}>
+        <div className="sidebar-health" style={{ marginBottom: '10px' }}>
           <div className={`health-dot ${isHealthy ? '' : 'offline'}`} />
-          <div style={{ flex: 1, overflow: 'hidden' }}>
-            <div
-              className="mono"
-              style={{
-                fontSize: '11px',
-                color: 'var(--text-secondary)',
-                textOverflow: 'ellipsis',
-                overflow: 'hidden',
-                whiteSpace: 'nowrap',
-              }}
-              title={`${dbStr} · ${modelStr}`}
-            >
-              {dbStr} · {modelStr}
-            </div>
+          <div
+            className="mono"
+            style={{
+              fontSize: '10.5px',
+              color: 'var(--text-muted)',
+              textOverflow: 'ellipsis',
+              overflow: 'hidden',
+              whiteSpace: 'nowrap',
+            }}
+            title={`${dbStr} · ${modelStr}`}
+          >
+            {dbStr} · {modelStr}
           </div>
         </div>
 
@@ -356,37 +325,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            paddingTop: user ? '8px' : 0,
-            borderTop: user ? '1px solid var(--border-subtle)' : 'none',
           }}
         >
           <div style={{ overflow: 'hidden', flex: 1 }}>
             {user ? (
-              <>
-                <div
-                  style={{
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    color: 'var(--text-primary)',
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                  }}
-                >
-                  {user.full_name || user.email}
-                </div>
-                <div
-                  style={{
-                    fontSize: '11px',
-                    color: 'var(--text-muted)',
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                  }}
-                >
-                  {user.email}
-                </div>
-              </>
+              <div
+                style={{
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  color: 'var(--text-secondary)',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                {user.full_name || user.email}
+              </div>
             ) : (
               <div className="mono" style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                 API Key Session

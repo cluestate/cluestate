@@ -23,10 +23,11 @@ env/
 .env
 .cluestate_secret
 
-# Database
+# Database & local media uploads
 *.db
 *.sqlite
 *.sqlite3
+uploads/
 
 # OS
 .DS_Store

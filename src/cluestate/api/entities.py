@@ -6,10 +6,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_session
 from ..engine import compile_entity_state, matches_state_filters
-from ..models import Entity, Episode, Evidence, Memory, MemoryStatus, Topic, Workspace
-from ..schemas import EntityCreate, EntityDetail, EntityRead, EpisodeRead
+from ..media import delete_upload_file
+from ..models import (
+    Entity,
+    Episode,
+    EpisodeAttachment,
+    Evidence,
+    IngestJob,
+    Memory,
+    MemoryStatus,
+    Topic,
+    Workspace,
+)
+from ..schemas import AttachmentRead, EntityCreate, EntityDetail, EntityRead, EpisodeRead
 from ..security import get_current_workspace
-from .memories import hydrate_memory_reads
+from .memories import hydrate_memory_reads, to_attachment_read
 
 router = APIRouter(prefix="/entities", tags=["Entities"])
 
@@ -171,8 +182,22 @@ async def get_entity_episodes(
         .order_by(Episode.occurred_at.desc(), Episode.created_at.desc())
         .limit(limit)
     )
-    episodes = result.scalars().all()
-    return [EpisodeRead(**e.model_dump()) for e in episodes]
+    episodes = list(result.scalars().all())
+    ep_ids = [e.id for e in episodes if e.id is not None]
+    atts_by_ep: dict[int, list[AttachmentRead]] = {}
+    if ep_ids:
+        att_res = await session.execute(
+            select(EpisodeAttachment)
+            .where(EpisodeAttachment.episode_id.in_(ep_ids))
+            .order_by(EpisodeAttachment.id.asc())
+        )
+        for att in att_res.scalars().all():
+            atts_by_ep.setdefault(att.episode_id, []).append(to_attachment_read(att))
+
+    return [
+        EpisodeRead(**e.model_dump(), attachments=atts_by_ep.get(e.id, []) if e.id else [])
+        for e in episodes
+    ]
 
 
 @router.delete("/{entity_id}", status_code=204)
@@ -181,7 +206,7 @@ async def delete_entity(
     workspace: Workspace = Depends(get_current_workspace),
     session: AsyncSession = Depends(get_session),
 ):
-    """Transactionally delete an entity and all associated memories, episodes, and evidence."""
+    """Transactionally delete an entity and all associated memories, episodes, attachments, jobs, and evidence."""
     entity = await session.get(Entity, entity_id)
     if not entity or entity.workspace_id != workspace.id:
         raise HTTPException(status_code=404, detail="Entity not found")
@@ -198,8 +223,15 @@ async def delete_entity(
             update(Memory).where(Memory.entity_id == entity_id).values(superseded_by_id=None)
         )
     if ep_ids:
+        att_res = await session.execute(
+            select(EpisodeAttachment).where(EpisodeAttachment.episode_id.in_(ep_ids))
+        )
+        for att in att_res.scalars().all():
+            delete_upload_file(att.storage_path)
+        await session.execute(delete(EpisodeAttachment).where(EpisodeAttachment.episode_id.in_(ep_ids)))
         await session.execute(delete(Evidence).where(Evidence.episode_id.in_(ep_ids)))
 
+    await session.execute(delete(IngestJob).where(IngestJob.entity_id == entity_id))
     await session.execute(delete(Memory).where(Memory.entity_id == entity_id))
     await session.execute(delete(Episode).where(Episode.entity_id == entity_id))
     await session.delete(entity)

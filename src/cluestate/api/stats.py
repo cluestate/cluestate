@@ -13,6 +13,7 @@ from ..models import (
     Entity,
     Episode,
     Evidence,
+    IngestJob,
     Memory,
     MemoryStatus,
     Topic,
@@ -168,6 +169,15 @@ async def get_dashboard_stats(
     )
     ingests_this_month = res_month_ep.scalar() or 0
 
+    queue_counts = {"queued": 0, "processing": 0, "failed": 0, "completed": 0}
+    res_jobs = await session.execute(
+        select(IngestJob.status, func.count(IngestJob.id))
+        .where(IngestJob.workspace_id == workspace.id)
+        .group_by(IngestJob.status)
+    )
+    for j_st, j_cnt in res_jobs.all():
+        queue_counts[str(j_st)] = j_cnt
+
     return {
         "total_entities": total_entities,
         "total_memories": total_memories,
@@ -176,6 +186,7 @@ async def get_dashboard_stats(
         "total_episodes": total_episodes,
         "total_topics": total_topics,
         "status_counts": status_counts,
+        "queue_counts": queue_counts,
         "recent_entities": recent_entities,
         "recent_memories": recent_memories,
         "topic_distribution": topic_distribution,
@@ -189,6 +200,7 @@ async def get_dashboard_stats(
             "version": __version__,
             "llm_model": settings.resolved_llm_model,
             "judge_model": settings.resolved_judge_model,
+            "vision_model": settings.resolved_vision_model,
             "database": "sqlite" if settings.is_sqlite else "postgresql",
         },
     }

@@ -266,6 +266,18 @@ class MemoryUpdate(BaseModel):
 # Episode / Evidence Schemas
 # ──────────────────────────────────────────────
 
+class AttachmentRead(BaseModel):
+    id: int
+    episode_id: int
+    filename: str
+    mime_type: str
+    size_bytes: int
+    sha256: str = ""
+    has_file: bool = False
+    download_url: Optional[str] = None
+    created_at: datetime
+
+
 class EpisodeRead(BaseModel):
     id: int
     entity_id: int
@@ -277,6 +289,7 @@ class EpisodeRead(BaseModel):
     meta: dict
     occurred_at: datetime
     created_at: datetime
+    attachments: list[AttachmentRead] = Field(default_factory=list)
 
 
 class EvidenceRead(BaseModel):
@@ -292,6 +305,7 @@ class EvidenceRead(BaseModel):
     episode_source_type: Optional[str] = None
     episode_description: Optional[str] = None
     episode_occurred_at: Optional[datetime] = None
+    episode_attachments: list[AttachmentRead] = Field(default_factory=list)
 
 
 # ──────────────────────────────────────────────
@@ -316,6 +330,8 @@ class IngestRequest(BaseModel):
     auto_create_entity: bool = Field(default=True, description="If true, create the entity if it doesn't exist")
     entity_name: str = Field(default="", description="Name for auto-created entity")
     dry_run: bool = Field(default=False, description="If true, simulate extraction and schema validation without persisting state")
+    mode: str = Field(default="sync", description="Execution mode: 'sync' (wait for result) or 'async' (enqueue durable background job)")
+    queue_on_error: bool = Field(default=False, description="If true in sync mode, enqueue a durable retry job if the LLM provider fails transiently")
 
     @field_validator("source_type", mode="before")
     @classmethod
@@ -352,10 +368,30 @@ class IngestResponse(BaseModel):
     memories_new: int
     idempotent_replay: bool = False
     dry_run: bool = False
+    job_id: Optional[int] = None
+    job_status: Optional[str] = None
     judge_applied: bool = False
     judge_rejected: list[JudgeRejectedItem] = Field(default_factory=list)
     state: dict[str, Any] = Field(default_factory=dict)
     memories: list[MemoryRead]
+
+
+class IngestJobRead(BaseModel):
+    id: int
+    workspace_id: int
+    entity_id: int
+    episode_id: int
+    entity_name: Optional[str] = None
+    entity_external_id: Optional[str] = None
+    status: str
+    attempts: int
+    max_attempts: int
+    next_run_at: datetime
+    last_error: Optional[str] = None
+    result_summary: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
 
 
 class DemoSeedRequest(BaseModel):

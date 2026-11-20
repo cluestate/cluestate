@@ -5,8 +5,11 @@ import {
   Edit3,
   Plus,
   Trash2,
+  FileText,
+  ExternalLink,
 } from 'lucide-react';
-import type { Evidence, Memory, MemoryStatus, Topic } from '../types';
+import type { Attachment, Evidence, Memory, MemoryStatus, Topic } from '../types';
+import { api } from '../api';
 
 interface EvidenceInspectorProps {
   memory: Memory | null;
@@ -40,6 +43,7 @@ export const EvidenceInspector: React.FC<EvidenceInspectorProps> = ({
   const [editValue, setEditValue] = useState('');
   const [editTopicId, setEditTopicId] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
+  const [attachmentPreviews, setAttachmentPreviews] = useState<Record<number, string>>({});
 
   useEffect(() => {
     setIsEditing(false);
@@ -49,6 +53,49 @@ export const EvidenceInspector: React.FC<EvidenceInspectorProps> = ({
       setEditTopicId(memory.topic_id ? String(memory.topic_id) : '');
     }
   }, [memory]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const createdUrls: string[] = [];
+
+    const loadPreviews = async () => {
+      if (!memory?.evidence) {
+        setAttachmentPreviews({});
+        return;
+      }
+      const nextMap: Record<number, string> = {};
+      for (const ev of memory.evidence) {
+        for (const att of ev.episode_attachments || []) {
+          if (att.has_file && att.download_url && att.mime_type.startsWith('image/')) {
+            try {
+              const url = await api.fetchAttachmentBlobUrl(att.download_url);
+              createdUrls.push(url);
+              if (!cancelled) nextMap[att.id] = url;
+            } catch {
+              // Ignore preview load failures
+            }
+          }
+        }
+      }
+      if (!cancelled) setAttachmentPreviews(nextMap);
+    };
+
+    loadPreviews();
+    return () => {
+      cancelled = true;
+      createdUrls.forEach((u) => URL.revokeObjectURL(u));
+    };
+  }, [memory?.id]);
+
+  const handleOpenAttachment = async (att: Attachment) => {
+    if (!att.download_url) return;
+    try {
+      const blobUrl = attachmentPreviews[att.id] || (await api.fetchAttachmentBlobUrl(att.download_url));
+      window.open(blobUrl, '_blank', 'noopener,noreferrer');
+    } catch {
+      // Ignore
+    }
+  };
 
   if (!memory) {
     return (
@@ -387,6 +434,57 @@ export const EvidenceInspector: React.FC<EvidenceInspectorProps> = ({
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             {evidenceList.map((ev, idx) => (
               <div key={ev.id || idx}>
+                {/* Attached Original Media (Photos, Screenshots, GIFs, PDFs) */}
+                {ev.episode_attachments && ev.episode_attachments.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '10px' }}>
+                    {ev.episode_attachments.map((att) => (
+                      <div key={att.id} style={{ background: '#FFFFFF', padding: '10px', borderLeft: '3px solid var(--ultramarine)' }}>
+                        {att.mime_type.startsWith('image/') && attachmentPreviews[att.id] ? (
+                          <div>
+                            <img
+                              src={attachmentPreviews[att.id]}
+                              alt={att.filename}
+                              onClick={() => handleOpenAttachment(att)}
+                              style={{
+                                width: '100%',
+                                maxHeight: '220px',
+                                objectFit: 'contain',
+                                cursor: 'pointer',
+                                display: 'block',
+                                marginBottom: '6px',
+                              }}
+                            />
+                            <div className="mono" style={{ fontSize: '10.5px', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
+                              <span>{att.filename}</span>
+                              <span>{att.mime_type}</span>
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
+                              <FileText size={14} color="var(--teal)" />
+                              <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {att.filename}
+                              </span>
+                            </div>
+                            {att.has_file && att.download_url && (
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-xs"
+                                style={{ color: 'var(--ultramarine)' }}
+                                onClick={() => handleOpenAttachment(att)}
+                              >
+                                <span>Open</span>
+                                <ExternalLink size={11} />
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {renderHighlightedEpisode(ev)}
 
                 <div

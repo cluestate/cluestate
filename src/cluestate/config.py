@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     # ─── LLM ───
     llm_model: str = "openai/gpt-4o-mini"
     judge_model: str = ""  # Optional dedicated Critic/Judge model (defaults to resolved_llm_model)
+    vision_model: str = ""  # Optional dedicated Vision model for images/scanned PDFs (defaults to resolved_llm_model)
 
     # Provider keys (LiteLLM reads these automatically)
     openai_api_key: str = ""
@@ -67,6 +68,15 @@ class Settings(BaseSettings):
     rate_limit_ingest_per_min: int = 0
     max_ingests_per_workspace_month: int = 0
 
+    # ─── Multimodal Media Storage & Async Queue Worker ───
+    upload_dir: str = "./uploads"
+    store_uploaded_media: bool = True
+    max_upload_size_mb: int = 10
+    enable_ingest_worker: bool = True
+    ingest_worker_concurrency: int = 2
+    ingest_worker_poll_seconds: float = 1.0
+    ingest_job_max_attempts: int = 4
+
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",
@@ -97,6 +107,11 @@ class Settings(BaseSettings):
     def resolved_judge_model(self) -> str:
         """Return configured Critic/Judge model, falling back to resolved_llm_model."""
         return self.judge_model.strip() or self.resolved_llm_model
+
+    @property
+    def resolved_vision_model(self) -> str:
+        """Return configured Vision model for images/scanned PDFs, falling back to resolved_llm_model."""
+        return self.vision_model.strip() or self.resolved_llm_model
 
     @property
     def is_sqlite(self) -> bool:

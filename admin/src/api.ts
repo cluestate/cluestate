@@ -8,6 +8,7 @@ import type {
   Episode,
   ExtractionPolicy,
   HealthInfo,
+  IngestJob,
   IngestResponse,
   IntelResponse,
   InviteInspectInfo,
@@ -360,7 +361,7 @@ export const api = {
       method: 'DELETE',
     }),
 
-  // Ingestion
+  // Ingestion (Text Sync/Async, Multimodal Upload, Durable Queue Jobs)
   ingest: (data: {
     content: string;
     entity_id?: number;
@@ -373,6 +374,8 @@ export const api = {
     source_description?: string;
     auto_create_entity?: boolean;
     dry_run?: boolean;
+    mode?: 'sync' | 'async';
+    queue_on_error?: boolean;
     meta?: Record<string, any>;
   }) =>
     request<IngestResponse>('/ingest', {
@@ -383,6 +386,56 @@ export const api = {
         ...data,
       }),
     }),
+
+  ingestUpload: async (formData: FormData): Promise<IngestResponse> => {
+    const token = localStorage.getItem(TOKEN_STORAGE_KEY);
+    const apiKey = localStorage.getItem(API_KEY_STORAGE_KEY);
+    const workspaceId = localStorage.getItem(WORKSPACE_ID_STORAGE_KEY);
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    else if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+    if (workspaceId && token) headers['X-Workspace-Id'] = workspaceId;
+
+    const res = await fetch('/api/ingest/upload', {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+    if (!res.ok) {
+      let detail = `Upload failed (${res.status})`;
+      try {
+        const err = await res.json();
+        detail = typeof err.detail === 'string' ? err.detail : JSON.stringify(err.detail);
+      } catch {
+        // Keep default
+      }
+      throw new Error(detail);
+    }
+    return res.json();
+  },
+
+  listIngestJobs: (status?: string) =>
+    request<IngestJob[]>(status ? `/ingest/jobs?status=${encodeURIComponent(status)}` : '/ingest/jobs'),
+
+  getIngestJob: (jobId: number) => request<IngestJob>(`/ingest/jobs/${jobId}`),
+
+  retryIngestJob: (jobId: number) =>
+    request<IngestJob>(`/ingest/jobs/${jobId}/retry`, { method: 'POST' }),
+
+  fetchAttachmentBlobUrl: async (downloadUrl: string): Promise<string> => {
+    const token = localStorage.getItem(TOKEN_STORAGE_KEY);
+    const apiKey = localStorage.getItem(API_KEY_STORAGE_KEY);
+    const workspaceId = localStorage.getItem(WORKSPACE_ID_STORAGE_KEY);
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    else if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+    if (workspaceId && token) headers['X-Workspace-Id'] = workspaceId;
+
+    const res = await fetch(downloadUrl, { headers });
+    if (!res.ok) throw new Error('Failed to load attachment');
+    const blob = await res.blob();
+    return URL.createObjectURL(blob);
+  },
 
   // Intel
   getEntityIntel: (entityId: number) =>

@@ -4,7 +4,7 @@ import {
   ChevronRight,
   CheckCircle2,
 } from 'lucide-react';
-import type { DashboardStats, HealthInfo, MemoryStatus, Workspace } from '../types';
+import type { DashboardStats, HealthInfo, IngestJob, MemoryStatus, Workspace } from '../types';
 import { api } from '../api';
 import { useToast } from '../components/Toast';
 
@@ -28,6 +28,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
 }) => {
   const { notify } = useToast();
   const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [activeJobs, setActiveJobs] = useState<IngestJob[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [seedingDemo, setSeedingDemo] = useState<'clinical' | 'saas' | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -36,13 +37,27 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     try {
       setIsLoading(true);
       setError(null);
-      const data = await api.getStats();
+      const [data, jobs] = await Promise.all([
+        api.getStats(),
+        api.listIngestJobs().catch(() => [] as IngestJob[]),
+      ]);
       setStats(data);
+      setActiveJobs(jobs.filter((j) => j.status === 'queued' || j.status === 'processing' || j.status === 'failed').slice(0, 5));
       if (onStatsLoaded) onStatsLoaded(data);
     } catch (err: any) {
       setError(err.message || 'Failed to load workspace overview');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleRetryJob = async (jobId: number) => {
+    try {
+      await api.retryIngestJob(jobId);
+      notify(`Job #${jobId} re-queued for immediate retry`, 'info');
+      await fetchStats();
+    } catch (err: any) {
+      notify(err.message || 'Failed to retry job', 'error');
     }
   };
 
@@ -170,6 +185,58 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           <div className="editorial-metric-label">Schema Tags</div>
         </div>
       </div>
+
+      {/* Processing Queue Strip (only shown when jobs are queued, active, or failed) */}
+      {activeJobs.length > 0 && (
+        <div style={{ marginBottom: '28px' }}>
+          <div className="card-title">ASYNC PROCESSING QUEUE ({activeJobs.length})</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {activeJobs.map((job) => (
+              <div
+                key={job.id}
+                className={`signal-strip ${job.status === 'failed' ? 'danger' : ''}`}
+                style={{
+                  background: 'var(--bg-ice)',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: '12px',
+                  flexWrap: 'wrap',
+                }}
+              >
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                    <span className="mono" style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                      JOB #{job.id}
+                    </span>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                      {job.entity_name || job.entity_external_id || `Entity #${job.entity_id}`}
+                    </span>
+                    <span className={`badge ${job.status === 'failed' ? 'badge-danger' : 'badge-info'}`}>
+                      {job.status.toUpperCase()} ({job.attempts}/{job.max_attempts})
+                    </span>
+                  </div>
+                  {job.last_error && (
+                    <div className="mono" style={{ marginTop: '4px', fontSize: '11.5px', color: 'var(--signal-red)' }}>
+                      {job.last_error}
+                    </div>
+                  )}
+                </div>
+
+                {job.status === 'failed' && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-xs"
+                    onClick={() => handleRetryJob(job.id)}
+                  >
+                    Retry Job
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Instant 1-Click Demo & Quickstart Setup when Workspace is empty */}
       {stats && (stats.total_topics === 0 || stats.total_memories === 0) && (

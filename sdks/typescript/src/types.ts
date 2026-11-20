@@ -143,6 +143,9 @@ export interface IngestParams {
   auto_create_entity?: boolean;
   dryRun?: boolean;
   dry_run?: boolean;
+  mode?: 'sync' | 'async';
+  queueOnError?: boolean;
+  queue_on_error?: boolean;
 }
 
 export interface JudgeRejectedItem {
@@ -160,6 +163,8 @@ export interface IngestResponse {
   memories_new: number;
   idempotent_replay: boolean;
   dry_run?: boolean;
+  job_id?: number | null;
+  job_status?: string | null;
   judge_applied?: boolean;
   judge_rejected?: JudgeRejectedItem[];
   state?: Record<string, unknown>;

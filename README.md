@@ -6,9 +6,9 @@
 
 **Open-source, deterministic, evidence-backed state & memory infrastructure for AI agents and modern applications.**
 
-Turn unstructured conversations, support tickets, clinical notes, and app events into **typed, schema-enforced, quote-verified profiles** in PostgreSQL or SQLite — **no vector database required.**
+Turn unstructured conversations, support tickets, **photos, screenshots, PDFs, DOCX**, and app events into **typed, schema-enforced, quote-verified profiles** in PostgreSQL or SQLite — **no vector database or Redis required.**
 
-[**Start on ClueState Cloud (`cluestate.com`)**](https://cluestate.com) · [**Quickstart (60s)**](#quickstart-under-60-seconds) · [**Architecture**](docs/architecture.md) · [**Python SDK**](docs/python-sdk.md) · [**TypeScript SDK**](docs/typescript-sdk.md) · [**MCP Server**](#model-context-protocol-mcp-server)
+[**Start on ClueState Cloud (`cluestate.com`)**](https://cluestate.com) · [**Quickstart (60s)**](#quickstart-under-60-seconds) · [**AI Agent Integration Guide**](docs/AGENT_GUIDE.md) · [**Architecture**](docs/architecture.md) · [**Python SDK**](docs/python-sdk.md) · [**TypeScript SDK**](docs/typescript-sdk.md) · [**MCP Server**](#model-context-protocol-mcp-server)
 
 [![ClueState Cloud](https://img.shields.io/badge/cloud-fully%20hosted%20at%20cluestate.com-3D2CE0.svg)](https://cluestate.com)
 [![License](https://img.shields.io/badge/license-Apache%202.0-12151C.svg)](LICENSE)
@@ -19,23 +19,25 @@ Turn unstructured conversations, support tickets, clinical notes, and app events
 
 </div>
 
-> **Want everything ready out of the box?** Use [**ClueState Cloud (`cluestate.com`)**](https://cluestate.com) — our fully hosted, managed platform with PostgreSQL, LLM extraction, Admin Console, multi-workspace teams, and instant `cs_live_...` API keys pre-configured. Self-host anytime with Apache 2.0.
+> **Want everything ready out of the box?** Use [**ClueState Cloud (`cluestate.com`)**](https://cluestate.com) — our fully hosted, managed platform with PostgreSQL, persistent media storage, LLM extraction, Adversarial Critic verification, Admin Console, multi-workspace teams, and instant `cs_live_...` API keys pre-configured. Self-host anytime under Apache 2.0.
+>
+> **Building with an AI coding agent (Cursor, Claude Code, Antigravity, Windsurf)?** Hand it [**`docs/AGENT_GUIDE.md`**](docs/AGENT_GUIDE.md) — a complete single-file integration manual covering every API endpoint, schema contract, multimodal upload, async queue job, and SDK pattern.
 
 ---
 
 ## The 10-Second Mental Model
 
-Feed ClueState raw text from any channel. Get back **compiled, deterministic JSON state** for your code, **prompt-ready context** for your AI agents, and **character-verified source quotes** for audits and humans.
+Feed ClueState raw text — or upload a **photo of a handwritten intake form, a chat screenshot, a GIF, a PDF lab report, or a DOCX contract**. Get back **compiled, deterministic JSON state** for your code, **prompt-ready context** for your AI agents, and **character-verified source quotes + original media** for audits and humans.
 
 ```text
-INPUT (Support Call / Clinical Note / Email)
+INPUT (Support Call / Clinical Note / Photo / Screenshot / PDF)
 ───────────────────────────────────────────────────────────────────────────────
 "We migrated from MySQL to PostgreSQL last month. Approved Q4 budget is $25,000,
  and please keep all notifications on SMS — never phone calls."
 ```
 
 ```json
-// OUTPUT — intel.state (Deterministic, typed, ready for app logic & SQL)
+// OUTPUT — intel.state (Deterministic, typed, queryable via ?where=...)
 {
   "tech_stack": ["PostgreSQL"],
   "annual_budget": 25000,
@@ -43,7 +45,7 @@ INPUT (Support Call / Clinical Note / Email)
 }
 ```
 
-Every single value is backed by exact character offsets (`[char_start:char_end]`) and a SHA-256 content hash pointing straight to the sentence where the user said it.
+Every single value is backed by exact character offsets (`[char_start:char_end]`), a SHA-256 content hash, and (for uploaded media) the original image or PDF side-by-side in the Provenance Inspector.
 
 ---
 
@@ -51,22 +53,23 @@ Every single value is backed by exact character offsets (`[char_start:char_end]`
 
 Vector databases (RAG) and rolling LLM summaries break down the moment facts **change over time** or **matter operationally**.
 
-When a customer upgrades their budget from `$10k` to `$25k`, switches databases, or discloses a penicillin allergy:
-- **Vector RAG** retrieves *both* the outdated and current chunks together and leaves the LLM guessing.
+When a customer upgrades their budget from `$10k` to `$25k`, switches databases, or discloses a penicillin allergy on a photographed intake form:
+- **Vector RAG** retrieves *both* outdated and current chunks together and leaves the LLM guessing.
 - **Rolling Summaries** silently drop nuance, hallucinate inferences, and lose the original verbatim quote.
-- **Neither** gives your backend clean, typed fields (`boolean`, `number`, `date`, `enum`, `list`) you can branch on in code.
+- **Neither** gives your backend typed fields (`boolean`, `number`, `date`, `enum`, `list`), state-filtered queries (`?where=known_allergies=penicillin`), or a human Review Queue.
 
 **ClueState separates probabilistic LLM extraction from deterministic database state:**
 
-| Capability | Vector RAG | Rolling Summaries | **ClueState** |
+| Capability | Vector RAG / Memory Stores | Rolling Summaries | **ClueState** |
 | :--- | :--- | :--- | :--- |
 | **Contradictions & updates** | Pulls stale + new chunks together | Overwrites or muddles nuance | Enforced per-tag `replace`, `append`, or `review` |
-| **Typed state (`intel.state`)** | Unstructured text chunks | Prose paragraphs | Compiled `boolean`, `number`, `date`, `enum`, `list`, `text` |
-| **Extraction guardrails** | None | Prompt-only best effort | Per-tag instructions, `allow_inferred=False`, strict/guided/open modes |
-| **Citation & audit integrity** | Chunk-level heuristics | Lost in summarization | Programmatically verified `[char_start, char_end]` + SHA-256 |
-| **High-stakes human review** | Not supported | Not supported | Built-in Review Queue for medical, legal, financial, or custom tags |
-| **Out-of-order backfills** | Breaks temporal truth | Corrupted by old imports | Chronological `occurred_at` event-time validity intervals |
-| **Infrastructure** | Requires vector DB + sync | Prompt-only context | Standard **PostgreSQL** or **SQLite** + Web Console + MCP |
+| **Typed state (`intel.state`)** | Unstructured text strings | Prose paragraphs | Compiled `boolean`, `number`, `date`, `enum`, `list`, `text` |
+| **State-filtered querying** | Approximate vector similarity | Not supported | Exact `GET /api/entities?where=is_vegan=true&where=annual_budget>=25000` |
+| **Multimodal (Images & PDFs)** | Opaque vector embedding | Lost after summary | **Transcript-first** (`PNG/JPG/WEBP/GIF/PDF/DOCX`) + original media side-by-side |
+| **Negation & speaker guardrails** | None | Prompt-only best effort | Built-in **Smart Adversarial Critic** (`off \| smart \| always`) + `judge_note` |
+| **Citation & audit integrity** | Chunk heuristics | Lost in summarization | Programmatically verified `[char_start, char_end]` + SHA-256 |
+| **Resilience & retries** | Caller handles failures | Caller handles failures | Built-in **DB-backed async queue** with exponential-backoff retries (Zero Redis) |
+| **Infrastructure** | Vector DB + sync pipeline | Prompt-only context | Single container: **PostgreSQL or SQLite** + Web Console + MCP |
 
 ---
 
@@ -82,19 +85,22 @@ from cluestate import ClueState
 # Connects to ClueState Cloud by default (pass base_url="http://localhost:8000" if self-hosting)
 cs = ClueState(api_key="cs_live_YOUR_API_KEY")
 
-# 1. Ingest any conversation, ticket, email, or note
+# 1. Ingest any conversation, ticket, email, or note (sync default, or mode="async")
 cs.ingest(
     external_id="cust_402",
     entity_name="Marcus Vance",
     source_type="support_ticket",
     content="We migrated from MySQL to PostgreSQL. Approved Q4 software budget is $25,000.",
+    queue_on_error=True,  # Auto-queues retry job if LLM provider has a transient outage
 )
 
 # 2. Read deterministic state for code + formatted block for LLM prompts
 intel = cs.get_intel("cust_402")
-
 print(intel.state)             # {'tech_stack': ['PostgreSQL'], 'annual_budget': 25000}
 print(intel.formatted_prompt)  # Clean, sourced context ready to inject into any system prompt
+
+# 3. Query / segment profiles directly by compiled state
+enterprise = cs.entities.list(where=["annual_budget>=25000", "tech_stack=PostgreSQL"])
 ```
 
 ### TypeScript / JavaScript (`npm install @cluestate/sdk`)
@@ -112,6 +118,7 @@ await cs.ingest({
   entityName: "Marcus Vance",
   sourceType: "support_ticket",
   content: "We migrated from MySQL to PostgreSQL. Approved Q4 software budget is $25,000.",
+  queueOnError: true,
 });
 
 const intel = await cs.getIntel("cust_402");
@@ -120,11 +127,11 @@ console.log(intel.formatted_prompt); // Drop straight into OpenAI / Anthropic / 
 ```
 
 <details>
-<summary><strong>REST API (cURL / any language)</strong></summary>
+<summary><strong>REST API — Text, Async Queue, and Photo / Screenshot / PDF Upload (cURL)</strong></summary>
 
 ```bash
-# 1. Ingest (pass "dry_run": true to simulate without writing to the database)
-curl -X POST http://localhost:8000/api/ingest \
+# 1. Text Ingest (default mode="sync"; use "mode": "async" for instant 202 queue, or "dry_run": true to simulate)
+curl -X POST https://app.cluestate.com/api/ingest \
   -H "Authorization: Bearer cs_live_YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -132,12 +139,25 @@ curl -X POST http://localhost:8000/api/ingest \
     "entity_name": "Marcus Vance",
     "source_type": "support_ticket",
     "idempotency_key": "evt_ticket_8841",
-    "occurred_at": "2026-10-31T14:20:00Z",
     "content": "We migrated from MySQL to PostgreSQL. Approved Q4 software budget is $25,000."
   }'
 
-# 2. Retrieve compiled state & prompt block
-curl http://localhost:8000/api/intel/by-external-id/cust_402 \
+# 2. Multimodal Upload (PNG, JPG, WEBP, GIF, native/scanned PDF, DOCX, TXT/MD/CSV — defaults to async 202 queue)
+curl -X POST https://app.cluestate.com/api/ingest/upload \
+  -H "Authorization: Bearer cs_live_YOUR_API_KEY" \
+  -F "external_id=patient_409" \
+  -F "entity_name=Clara Lindqvist" \
+  -F "source_type=intake_form" \
+  -F "content=Intake scan from clinic front desk" \
+  -F "files=@intake_form.pdf" \
+  -F "files=@allergy_card.jpg"
+
+# 3. Poll async job status (or inspect / retry failed jobs in the Admin Console)
+curl https://app.cluestate.com/api/ingest/jobs/1 \
+  -H "Authorization: Bearer cs_live_YOUR_API_KEY"
+
+# 4. Query profiles by compiled state
+curl "https://app.cluestate.com/api/entities?where=annual_budget>=25000&where=tech_stack=PostgreSQL" \
   -H "Authorization: Bearer cs_live_YOUR_API_KEY"
 ```
 
@@ -150,19 +170,19 @@ curl http://localhost:8000/api/intel/by-external-id/cust_402 \
 ### Option A — ClueState Cloud (Fully Hosted, Zero Setup)
 
 Skip servers, databases, and LLM key management — start immediately at **[cluestate.com](https://cluestate.com)**:
-1. Sign up and create your workspace in seconds.
-2. Pick a starter schema pack (Clinical, Enterprise SaaS, or VIP Concierge) or define your own tags.
+1. Sign up and create your workspace in seconds (or click **Load Clinical Demo** / **Load SaaS Demo** to explore verified ledgers immediately).
+2. Pick a starter schema pack or define your own typed tags.
 3. Copy your `cs_live_...` API key — both the Python and TypeScript SDKs point to ClueState Cloud automatically with zero extra config.
 
 ### Option B — Self-Host Locally (One Command, SQLite)
 
 ```bash
 pip install cluestate
-cp .env.example .env   # Add OPENAI_API_KEY (or Anthropic / Gemini / Mistral / Ollama)
+cp .env.example .env   # Set OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, or MISTRAL_API_KEY (auto-detected!)
 cluestate serve
 ```
 
-### Option C — Self-Host with Docker Compose (PostgreSQL + Web UI)
+### Option C — Self-Host with Docker Compose / Coolify (PostgreSQL + Persistent Media)
 
 ```bash
 git clone https://github.com/cluestate/cluestate.git && cd cluestate
@@ -170,109 +190,64 @@ cp .env.example .env   # Set OPENAI_API_KEY, POSTGRES_PASSWORD, SECRET_KEY
 docker compose up -d --build
 ```
 
-Open **`http://localhost:8000`** to create your local workspace and mint a scoped `cs_live_...` API key.
+Open **`http://localhost:8000`** to create your workspace and mint a scoped `cs_live_...` API key.
 
-> **Deploying on Coolify, Railway, Render, or Fly.io?** ClueState ships with a production `Dockerfile`, automatic Alembic migrations on boot, and a `/api/health` readiness endpoint.
+> **Deploying on Coolify, Railway, Render, or Fly.io?** ClueState ships with a production `Dockerfile`, automatic Alembic migrations on boot, crash-safe async job recovery, and `/api/health`. For persistent photo/PDF storage on Coolify, attach a Persistent Storage volume at `/app/uploads` and set `UPLOAD_DIR=/app/uploads`.
 
 ---
 
 ## What Makes ClueState Special
 
-### 1. Programmable Memory Schema & Extraction Policy
-Don't let an LLM dump messy key-value guesses into your database. Define exact **Memory Tags** via the Web UI or SDK:
+### 1. Grounded Multimodal Ingestion (Photos, Screenshots, GIFs, PDFs & DOCX)
+Upload `PNG`, `JPEG`, `WEBP`, `GIF`, **native or scanned `PDF`**, `DOCX`, `TXT`, `MD`, `CSV`, or `JSON` alongside text. ClueState runs a **transcript-first grounded pipeline**:
+1. Persists the original media to `UPLOAD_DIR` (toggleable via `STORE_UPLOADED_MEDIA=true`) with SHA-256 verification.
+2. Transcribes images & scanned PDF pages verbatim via LiteLLM Vision (`VISION_MODEL`), or extracts text cleanly from native PDFs/DOCX.
+3. Runs the standard ClueState extraction + Critic + `[char_start:char_end]` span verification over the transcript — and renders the **original image or PDF right inside the Provenance Inspector** next to the highlighted quote.
+
+### 2. Durable DB-Backed Async Queue & Auto-Retries (Zero Redis)
+- Default `POST /api/ingest` stays **synchronous** (`mode="sync"`) for simplicity and `dry_run` testing.
+- Pass `mode="async"` (default on `/api/ingest/upload`) to persist the raw Episode and return **`202 Accepted`** in **< 30ms**, or pass `queue_on_error=True` on sync calls so transient LLM timeouts/429s never lose data.
+- Powered by a native SQLite/PostgreSQL `ingest_jobs` table + in-process `asyncio` worker with exponential backoff (`15s → 60s → 5m → 15m`), automatic recovery on Coolify restarts, and 1-click **Retry** in the Admin Console.
+
+### 3. Smart Adversarial Critic / Judge (`off | smart | always`)
+Eliminates the #1 trust killer in AI memory systems — **negations** (*"I'm NOT vegan"*) and **speaker mix-ups** (doctor/agent asking a question vs. patient/customer answering):
+- In **`smart` mode (default)**, skips extra LLM calls on clean verbatim additions and automatically escalates contradictions, `review`-policy tags, inferred claims, unverified quotes, and multi-speaker dialogues.
+- Supports asymmetric model pairing (`LLM_MODEL` for fast extraction + optional `JUDGE_MODEL` for high-precision audits) and attaches a concise `judge_note` explaining every flagged or rejected claim.
+
+### 4. Programmable Memory Schema & State-Filtered Profiles (`?where=...`)
+Define typed Memory Tags (`boolean`, `enum` with optional `allow_custom_values`, `list`, `number` with min/max/units, `date`, `text`), per-tag `extraction_instructions`, `allow_inferred=False` explicit-only guardrails, `ttl_days` expiration, and workspace discretion modes (`strict | guided | open`):
 
 ```python
 cs.topics.create(
     name="known_allergies",
     label="Known Allergies",
-    data_type="list",                   # boolean | enum | list | number | date | text
+    data_type="list",
     cardinality="multiple",
-    update_policy="review",             # Route changes to human Review Queue
+    update_policy="review",
     enum_values=["penicillin", "peanuts", "latex", "shellfish"],
-    allow_custom_values=True,           # Allow unlisted allergies while standardizing known ones
-    allow_inferred=False,               # Explicit statements ONLY — never guess an allergy
+    allow_custom_values=True,
+    allow_inferred=False,
     extraction_instructions="Extract only explicitly stated drug or food allergies.",
     applies_to_entity_types=["person"],
 )
 ```
 
-Control how much discretion the agent has at the **workspace level**:
-- **`strict`** — Only store facts matching your defined Memory Tags; deterministically drop everything else.
-- **`guided`** *(recommended)* — Extract your typed schema tags *plus* high-signal open discoveries governed by your custom focus/exclusion instructions.
-- **`open`** — Capture general durable facts freely with optional human-review routing.
-
-### 2. Programmatically Verified Provenance
-Every extracted claim is checked against the raw `Episode.content` to compute exact `[char_start, char_end]` offsets and a SHA-256 hash. Unverified paraphrases have their confidence capped below the conflict threshold so **an LLM hallucination can never overwrite a verified fact.**
-
-<details>
-<summary><strong>Inspect a verified API response payload</strong></summary>
-
-```json
-{
-  "episode_id": 14,
-  "entity_id": 1,
-  "memories_extracted": 2,
-  "memories_updated": 1,
-  "memories_new": 1,
-  "idempotent_replay": false,
-  "dry_run": false,
-  "state": {
-    "tech_stack": ["PostgreSQL"],
-    "annual_budget": 25000
-  },
-  "memories": [
-    {
-      "id": 31,
-      "topic_name": "tech_stack",
-      "claim": "Uses PostgreSQL as primary database after migrating from MySQL",
-      "value": "PostgreSQL",
-      "structured_value": ["PostgreSQL"],
-      "claim_type": "explicit",
-      "confidence": 0.95,
-      "status": "active",
-      "evidence": [
-        {
-          "episode_id": 14,
-          "excerpt": "We migrated from MySQL to PostgreSQL.",
-          "is_verified": true,
-          "char_start": 0,
-          "char_end": 37
-        }
-      ]
-    }
-  ]
-}
+Then filter profiles directly in the API or Profiles Directory UI:
+```text
+GET /api/entities?where=is_vegan=true&where=known_allergies=penicillin
 ```
 
-</details>
-
-### 3. Event-Time Resolution & Expiration (TTL)
-- **Out-of-order imports:** Pass `occurred_at` when backfilling historical tickets or notes. Late-arriving older records (`event_time < existing.valid_from`) are preserved in the audit trail as historical (`superseded`) instead of clobbering newer truth.
-- **Idempotent ingestion:** Pass `idempotency_key` so retries and webhooks never duplicate memories.
-- **Auto-expiring facts:** Configure `ttl_days` on temporary states (e.g., active promotions, short-term blockers, travel windows).
-
-### 4. Clean Operational Console Built for Both Engineers & Domain Teams
-ClueState ships with an embedded React console designed for developers, business operators, and clinical/compliance staff:
-- **Live Profile Ledgers:** Inspect compiled deterministic state alongside 3px color-coded Signal Strips (Teal = verified, Red = needs review, Ultramarine = active).
-- **Click-to-Highlight Provenance Inspector:** Click any fact to jump directly to the highlighted verbatim quote inside the original source document.
-- **Global Review Queue:** Approve, confirm, or reject high-stakes claims across your entire workspace in one view.
-- **Interactive Extraction Bench (`dry_run`):** Test schema instructions and inspect character-span highlighting before persisting a single row.
-- **Multi-Workspace Isolation & Zero-SMTP Team Invites:** Separate clinics, clients, or environments into isolated workspaces (`1 API key = 1 workspace`), manage RBAC roles (`owner`, `admin`, `member`, `viewer`), clone schemas across workspaces, and onboard teammates via copyable single-use invite links — no email server required.
-
----
-
-## Built For High-Trust Use Cases
-
-- **Healthcare & Clinics:** Track patient allergies, dietary restrictions (`is_vegan`), chronic conditions, and contact preferences with `allow_inferred=False` and mandatory human review before facts enter active state.
-- **B2B SaaS & Customer Success:** Maintain a single live account ledger across discovery calls, Slack, and support tickets — budget, tech stack, renewal dates, and executive sponsors.
-- **Hospitality, Retail & Concierge:** Remember suite preferences, sensory/allergy rules, brand affinities, and milestone dates across POS, mobile apps, and support.
-- **Multi-Agent & AI Copilots:** Share one verified, up-to-date user profile across LangGraph, CrewAI, OpenAI Agents, Claude Desktop, and custom backends.
+### 5. Operational Console Built for Both Engineers & High-Trust Domain Teams
+- **Signal Strips & Obsidian Profile Anchors:** Clean borderless UI with 3px status strips (Teal = verified, Red = safety/review, Ultramarine = active).
+- **Click-to-Highlight Provenance Plane:** Inspect original uploaded photos/PDFs, verbatim quotes, `[char_start:char_end]` offsets, and Critic `judge_note` diagnostics.
+- **Global Review Queue & Dry-Run Extraction Bench:** Approve/reject sensitive facts across the workspace, simulate extractions before persisting, and load a **1-click Clinical or SaaS Demo** on empty workspaces.
+- **Multi-Workspace RBAC & Zero-SMTP Invites:** `1 API key = 1 workspace`, roles (`owner`, `admin`, `member`, `viewer`), schema cloning, and copyable single-use invite links.
 
 ---
 
 ## Model Context Protocol (MCP) Server
 
-Connect Claude Desktop, Cursor, Windsurf, or any MCP-compatible agent directly to your local or remote ClueState workspace over `stdio`, `sse`, or `streamable-http`:
+Connect Claude Desktop, Cursor, Windsurf, or any MCP-compatible agent directly to ClueState over `stdio`, `sse`, or `streamable-http`:
 
 ```json
 {
@@ -281,7 +256,7 @@ Connect Claude Desktop, Cursor, Windsurf, or any MCP-compatible agent directly t
       "command": "cluestate",
       "args": ["mcp"],
       "env": {
-        "CLUESTATE_API_URL": "http://localhost:8000",
+        "CLUESTATE_API_URL": "https://app.cluestate.com",
         "CLUESTATE_API_KEY": "cs_live_your_key_here"
       }
     }
@@ -289,67 +264,41 @@ Connect Claude Desktop, Cursor, Windsurf, or any MCP-compatible agent directly t
 }
 ```
 
-| Tool / Resource | Type | Purpose |
-| :--- | :---: | :--- |
-| `cluestate_ingest` | Tool | Ingest interaction text and extract verified, resolved claims |
-| `cluestate_get_intel` | Tool | Retrieve compiled state and prompt context for an entity by `external_id` |
-| `cluestate_list_memories` | Tool | Inspect claims with confidence, status, and verbatim quotes |
-| `cluestate_search_entities` | Tool | Search tracked profiles by name or `external_id` |
-| `cluestate_forget` | Tool | Permanently delete a claim, its evidence, and orphaned episodes |
-| `cluestate://entities/{external_id}` | Resource | Direct entity state context resource |
-
 ---
 
-## LLM Providers, CLI & Configuration
+## LLM Providers, Evals, CLI & Environment Variables
 
-ClueState uses [LiteLLM](https://docs.litellm.ai/), so you can bring **OpenAI, Anthropic, Google Gemini, Mistral, Azure, or local Ollama** without vendor lock-in.
+ClueState uses [LiteLLM](https://docs.litellm.ai/) (OpenAI, Anthropic, Google Gemini, Mistral, Azure, or local Ollama) and **auto-detects your default model** from whichever provider API key you supply.
 
-### CLI Commands
+### CLI Commands & Evaluation Benchmark
 
 | Command | Description |
 | :--- | :--- |
-| `cluestate serve` | Start the FastAPI server + embedded Admin Console (`--host`, `--port`, `--reload`) |
-| `cluestate init` | Initialize or migrate the database to the latest schema |
-| `cluestate migrate` | Run Alembic migrations up to `head` |
-| `cluestate check` | Verify database connectivity, LLM key configuration, and auth mode |
+| `cluestate serve` | Start the FastAPI server, async queue worker, and Admin Console |
+| `cluestate init` / `cluestate migrate` | Initialize or run Alembic database migrations to `head` |
+| `cluestate check` | Verify database connectivity, resolved LLM/Judge models, and auth mode |
 | `cluestate mcp` | Start the MCP server (`--transport stdio \| sse \| streamable-http`) |
+| `python evals/run_evals.py --mode deterministic` | Run zero-cost deterministic gate, provenance & judge-escalation eval suite (`--mode live` for real LLM benchmarks) |
 
-### Environment Variables
+### Key Environment Variables
 
 | Variable | Default | Description |
 | :--- | :--- | :--- |
-| `LLM_MODEL` | `openai/gpt-4o-mini` | Any LiteLLM model ID (`anthropic/...`, `gemini/...`, `ollama/...`) |
-| `OPENAI_API_KEY` | — | Provider key (or `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `MISTRAL_API_KEY`) |
+| `LLM_MODEL` | `openai/gpt-4o-mini` *(auto-detected)* | Any LiteLLM model ID (`anthropic/...`, `gemini/...`, `ollama/...`) |
+| `JUDGE_MODEL` | *(falls back to `LLM_MODEL`)* | Optional stronger model for escalated Critic/Judge audits |
+| `VISION_MODEL` | *(falls back to `LLM_MODEL`)* | Optional vision model for photos, screenshots, GIFs, and scanned PDFs |
 | `DATABASE_URL` | `sqlite+aiosqlite:///./cluestate.db` | Async SQLAlchemy URL (`postgresql+psycopg://...` for PostgreSQL) |
-| `HOST` / `PORT` | `127.0.0.1` / `8000` | Server bind address and port |
-| `SECRET_KEY` | *(auto-persisted to `.cluestate_secret`)* | Signing secret for HMAC-SHA256 JWT sessions |
-| `ALLOW_SIGNUP` | `false` | Set `true` to allow open self-registration (single-use invite links work regardless) |
-| `CORS_ORIGINS` | `*` | Allowed CORS origins (`*` or comma-separated list) |
-
-### Local Development (API + React Admin Console)
-
-Requires Python 3.11+ and Node.js 20+:
-
-```bash
-git clone https://github.com/cluestate/cluestate.git && cd cluestate
-
-cd admin && npm install && npm run build && cd ..
-python -m venv .venv && source .venv/bin/activate  # Windows: .\.venv\Scripts\activate
-pip install -e ".[postgres,dev]"
-
-cp .env.example .env
-cluestate serve
-```
-
-- **Admin Console:** `http://127.0.0.1:8000`
-- **Swagger / OpenAPI:** `http://127.0.0.1:8000/docs`
-- **Health Check:** `http://127.0.0.1:8000/api/health`
+| `UPLOAD_DIR` / `STORE_UPLOADED_MEDIA` | `./uploads` / `true` | Persistent directory for uploaded media (mount `/app/uploads` in Coolify) |
+| `RATE_LIMIT_INGEST_PER_MIN` | `0` *(unlimited)* | Optional per-workspace ingestion rate limit for hosted deployments |
+| `MAX_INGESTS_PER_WORKSPACE_MONTH` | `0` *(unlimited)* | Optional monthly workspace ingestion cap for hosted deployments |
+| `ALLOW_SIGNUP` | `false` | Set `true` for open registration (single-use invite links always work) |
 
 ---
 
 ## Documentation & Community
 
-- **Homepage & Cloud:** [cluestate.com](https://cluestate.com)
+- **Fully Hosted Cloud:** [cluestate.com](https://cluestate.com)
+- **AI Agent Master Integration Guide:** [docs/AGENT_GUIDE.md](docs/AGENT_GUIDE.md)
 - **System Architecture:** [docs/architecture.md](docs/architecture.md)
 - **Python SDK Reference:** [docs/python-sdk.md](docs/python-sdk.md)
 - **TypeScript SDK Reference:** [docs/typescript-sdk.md](docs/typescript-sdk.md)

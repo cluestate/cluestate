@@ -117,6 +117,18 @@ export interface ApiKeyCreated extends ApiKeyItem {
   raw_key: string;
 }
 
+export interface Attachment {
+  id: number;
+  episode_id: number;
+  filename: string;
+  mime_type: string;
+  size_bytes: number;
+  sha256?: string;
+  has_file: boolean;
+  download_url?: string | null;
+  created_at: string;
+}
+
 export interface Evidence {
   id: number;
   episode_id: number;
@@ -130,6 +142,7 @@ export interface Evidence {
   episode_source_type?: string | null;
   episode_description?: string | null;
   episode_occurred_at?: string | null;
+  episode_attachments?: Attachment[];
 }
 
 export interface Memory {
@@ -207,13 +220,33 @@ export interface Episode {
   meta: Record<string, any>;
   occurred_at: string;
   created_at: string;
+  attachments?: Attachment[];
 }
 
 export interface SystemInfo {
   version: string;
   llm_model: string;
   judge_model?: string;
+  vision_model?: string;
   database: string;
+}
+
+export interface IngestJob {
+  id: number;
+  workspace_id: number;
+  entity_id: number;
+  episode_id: number;
+  entity_name?: string | null;
+  entity_external_id?: string | null;
+  status: 'queued' | 'processing' | 'completed' | 'failed' | string;
+  attempts: number;
+  max_attempts: number;
+  next_run_at: string;
+  last_error?: string | null;
+  result_summary?: Record<string, any>;
+  created_at: string;
+  started_at?: string | null;
+  completed_at?: string | null;
 }
 
 export interface WorkspaceUsage {
@@ -230,6 +263,12 @@ export interface DashboardStats {
   total_episodes: number;
   total_topics: number;
   status_counts: Record<string, number>;
+  queue_counts?: {
+    queued: number;
+    processing: number;
+    failed: number;
+    completed: number;
+  };
   recent_entities: {
     id: number;
     external_id: string;
@@ -293,6 +332,8 @@ export interface IngestResponse {
   memories_new: number;
   idempotent_replay?: boolean;
   dry_run?: boolean;
+  job_id?: number | null;
+  job_status?: string | null;
   judge_applied?: boolean;
   judge_rejected?: JudgeRejectedItem[];
   state?: Record<string, any>;

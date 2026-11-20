@@ -13,20 +13,21 @@ from fastapi.staticfiles import StaticFiles
 from . import __version__
 from .config import get_settings
 from .database import close_db, init_db
+from .worker import IngestWorkerManager
 
 logger = logging.getLogger("cluestate")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup: initialize database schema and default workspace. Shutdown: dispose engine."""
+    """Startup: initialize database schema, default workspace, and async ingest worker."""
     settings = get_settings()
     logging.basicConfig(level=settings.log_level.upper())
     logger.info(f"ClueState v{__version__} starting up")
     logger.info(
         f"Database: {settings.database_url.split('@')[-1] if '@' in settings.database_url else settings.database_url}"
     )
-    logger.info(f"LLM Model: {settings.llm_model}")
+    logger.info(f"LLM Model: {settings.resolved_llm_model}")
 
     # Ensure provider API keys are populated in os.environ for LiteLLM
     if settings.openai_api_key:
@@ -40,9 +41,15 @@ async def lifespan(app: FastAPI):
 
     await init_db()
     logger.info("Database initialized")
-    yield
-    await close_db()
-    logger.info("Shutdown complete")
+
+    worker = IngestWorkerManager()
+    await worker.start()
+    try:
+        yield
+    finally:
+        await worker.stop()
+        await close_db()
+        logger.info("Shutdown complete")
 
 
 def create_app() -> FastAPI:

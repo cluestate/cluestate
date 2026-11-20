@@ -319,6 +319,8 @@ class ClueState:
         meta: Optional[dict[str, Any]] = None,
         auto_create_entity: bool = True,
         dry_run: bool = False,
+        mode: str = "sync",
+        queue_on_error: bool = False,
     ) -> IngestResponse:
         """Ingest an interaction and extract verified customer state claims."""
         if not external_id and not entity_id:
@@ -332,6 +334,8 @@ class ClueState:
             "meta": meta or {},
             "auto_create_entity": auto_create_entity,
             "dry_run": dry_run,
+            "mode": mode,
+            "queue_on_error": queue_on_error,
         }
         if external_id is not None:
             payload["external_id"] = external_id
@@ -621,6 +625,8 @@ class AsyncClueState:
         meta: Optional[dict[str, Any]] = None,
         auto_create_entity: bool = True,
         dry_run: bool = False,
+        mode: str = "sync",
+        queue_on_error: bool = False,
     ) -> IngestResponse:
         """Ingest an interaction asynchronously and extract verified customer state."""
         if not external_id and not entity_id:
@@ -634,6 +640,8 @@ class AsyncClueState:
             "meta": meta or {},
             "auto_create_entity": auto_create_entity,
             "dry_run": dry_run,
+            "mode": mode,
+            "queue_on_error": queue_on_error,
         }
         if external_id is not None:
             payload["external_id"] = external_id

@@ -372,3 +372,43 @@ class Evidence(SQLModel, table=True):
 
     memory: Optional[Memory] = Relationship(back_populates="evidence_links")
     episode: Optional[Episode] = Relationship(back_populates="evidence_links")
+
+
+class EpisodeAttachment(SQLModel, table=True):
+    """Persisted multimodal file (image, screenshot, PDF, DOCX, text) attached to an Episode."""
+
+    __tablename__ = "episode_attachments"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    workspace_id: int = Field(default=1, foreign_key="workspaces.id", index=True)
+    episode_id: int = Field(foreign_key="episodes.id", index=True)
+    filename: str = Field(max_length=255)
+    mime_type: str = Field(default="application/octet-stream", max_length=120)
+    size_bytes: int = Field(default=0)
+    sha256: str = Field(default="", max_length=64, index=True)
+    storage_path: Optional[str] = Field(default=None, max_length=500)
+    extracted_text: str = Field(default="", sa_column=Column(Text, nullable=False, server_default=""))
+    created_at: datetime = Field(default_factory=_utcnow)
+
+
+class IngestJob(SQLModel, table=True):
+    """Durable DB-backed async ingestion & retry job (zero Redis required)."""
+
+    __tablename__ = "ingest_jobs"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    workspace_id: int = Field(default=1, foreign_key="workspaces.id", index=True)
+    entity_id: int = Field(foreign_key="entities.id", index=True)
+    episode_id: int = Field(foreign_key="episodes.id", index=True)
+    status: str = Field(
+        default="queued",
+        sa_column=Column(String(32), index=True, nullable=False, server_default="queued"),
+    )  # queued | processing | completed | failed
+    attempts: int = Field(default=0)
+    max_attempts: int = Field(default=4)
+    next_run_at: datetime = Field(default_factory=_utcnow, index=True)
+    last_error: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    result_summary: dict = Field(default_factory=dict, sa_column=Column("result_summary", JSON, nullable=False, server_default="{}"))
+    created_at: datetime = Field(default_factory=_utcnow)
+    started_at: Optional[datetime] = Field(default=None)
+    completed_at: Optional[datetime] = Field(default=None)

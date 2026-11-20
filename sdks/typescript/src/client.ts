@@ -334,6 +334,8 @@ export class ClueState {
       meta: params.meta ?? {},
       auto_create_entity: params.autoCreateEntity ?? params.auto_create_entity ?? true,
       dry_run: params.dryRun ?? params.dry_run ?? false,
+      mode: params.mode ?? 'sync',
+      queue_on_error: params.queueOnError ?? params.queue_on_error ?? false,
     };
 
     if (externalId !== undefined) payload.external_id = externalId;

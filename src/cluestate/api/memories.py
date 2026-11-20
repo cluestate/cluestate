@@ -3,16 +3,45 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import FileResponse
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_session
 from ..engine import compile_entity_state, format_entity_intel, validate_and_coerce_value
-from ..models import Entity, Episode, Evidence, Memory, MemoryStatus, Topic, Workspace
-from ..schemas import EvidenceRead, IntelResponse, MemoryRead, MemoryUpdate
+from ..media import delete_upload_file, resolve_upload_path
+from ..models import (
+    Entity,
+    Episode,
+    EpisodeAttachment,
+    Evidence,
+    IngestJob,
+    Memory,
+    MemoryStatus,
+    Topic,
+    Workspace,
+)
+from ..schemas import AttachmentRead, EvidenceRead, IntelResponse, MemoryRead, MemoryUpdate
 from ..security import get_current_workspace
 
 router = APIRouter(tags=["Memories"])
+
+
+def to_attachment_read(att: EpisodeAttachment) -> AttachmentRead:
+    has_file = bool(att.storage_path and resolve_upload_path(att.storage_path))
+    return AttachmentRead(
+        id=att.id,
+        episode_id=att.episode_id,
+        filename=att.filename,
+        mime_type=att.mime_type,
+        size_bytes=att.size_bytes,
+        sha256=att.sha256,
+        has_file=has_file,
+        download_url=(
+            f"/api/episodes/{att.episode_id}/attachments/{att.id}" if has_file and att.id is not None else None
+        ),
+        created_at=att.created_at,
+    )
 
 
 async def hydrate_memory_reads(
@@ -45,9 +74,17 @@ async def hydrate_memory_reads(
 
     ep_ids = list({ev.episode_id for ev in ev_list if ev.episode_id is not None})
     episodes_by_id: dict[int, Episode] = {}
+    atts_by_ep: dict[int, list[AttachmentRead]] = {}
     if ep_ids:
         ep_res = await session.execute(select(Episode).where(Episode.id.in_(ep_ids)))
         episodes_by_id = {ep.id: ep for ep in ep_res.scalars().all() if ep.id is not None}
+        att_res = await session.execute(
+            select(EpisodeAttachment)
+            .where(EpisodeAttachment.episode_id.in_(ep_ids))
+            .order_by(EpisodeAttachment.id.asc())
+        )
+        for att in att_res.scalars().all():
+            atts_by_ep.setdefault(att.episode_id, []).append(to_attachment_read(att))
 
     ev_by_mem: dict[int, list[EvidenceRead]] = {}
     for ev in ev_list:
@@ -59,6 +96,7 @@ async def hydrate_memory_reads(
                 episode_source_type=ep.source_type if ep else None,
                 episode_description=ep.source_description if ep else None,
                 episode_occurred_at=ep.occurred_at if ep else None,
+                episode_attachments=atts_by_ep.get(ev.episode_id, []),
             )
         )
 
@@ -270,8 +308,40 @@ async def delete_episode(
                 )
             )
 
+    # Clean up episode attachments (DB + persistent disk files) and ingest jobs
+    att_res = await session.execute(
+        select(EpisodeAttachment).where(EpisodeAttachment.episode_id == episode_id)
+    )
+    for att in att_res.scalars().all():
+        delete_upload_file(att.storage_path)
+    await session.execute(delete(EpisodeAttachment).where(EpisodeAttachment.episode_id == episode_id))
+    await session.execute(delete(IngestJob).where(IngestJob.episode_id == episode_id))
+
     await session.delete(episode)
     await session.commit()
+
+
+@router.get("/episodes/{episode_id}/attachments/{attachment_id}", tags=["Memories"])
+async def download_episode_attachment(
+    episode_id: int,
+    attachment_id: int,
+    workspace: Workspace = Depends(get_current_workspace),
+    session: AsyncSession = Depends(get_session),
+):
+    """Securely download or preview a persisted media attachment (image, screenshot, PDF, document)."""
+    att = await session.get(EpisodeAttachment, attachment_id)
+    if not att or att.episode_id != episode_id or att.workspace_id != workspace.id:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+
+    target = resolve_upload_path(att.storage_path)
+    if not target:
+        raise HTTPException(status_code=404, detail="Attachment file not persisted on disk")
+
+    return FileResponse(
+        path=target,
+        media_type=att.mime_type or "application/octet-stream",
+        filename=att.filename,
+    )
 
 
 # ──────────────────────────────────────────────

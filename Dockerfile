@@ -30,8 +30,8 @@ COPY --from=admin-builder /app/src/cluestate/static/ src/cluestate/static/
 # Install Python package including PostgreSQL driver support
 RUN pip install --no-cache-dir ".[postgres]"
 
-# Create data directory for persistent SQLite volumes
-RUN mkdir -p /app/data
+# Create data & persistent media upload directories for Docker/Coolify volumes
+RUN mkdir -p /app/data /app/uploads
 
 # Expose port
 EXPOSE 8000

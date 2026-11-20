@@ -13,7 +13,7 @@ from sqlmodel import SQLModel
 
 from cluestate import models  # noqa: F401 — ensure all tables are registered
 
-revision: str = "0003_workspaces_and_memory_policy"
+revision: str = "0003_workspaces_and_policy"
 down_revision: Union[str, None] = "0002_flexible_source_types"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

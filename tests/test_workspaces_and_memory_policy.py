@@ -361,6 +361,7 @@ def test_alembic_0003_migration_backfills_workspace_owners(tmp_path):
 
     from alembic import command
     from alembic.config import Config
+    from alembic.script import ScriptDirectory
     from sqlalchemy import create_engine, text
     from sqlalchemy.orm import Session
 
@@ -373,6 +374,11 @@ def test_alembic_0003_migration_backfills_workspace_owners(tmp_path):
 
     cfg = Config()
     cfg.set_main_option("script_location", migrations_dir)
+
+    # Guardrail: Alembic's alembic_version.version_num column is VARCHAR(32) on PostgreSQL
+    script = ScriptDirectory.from_config(cfg)
+    for rev in script.walk_revisions():
+        assert len(rev.revision) <= 32, f"Revision ID '{rev.revision}' exceeds VARCHAR(32)"
 
     engine = create_engine(sync_url)
 

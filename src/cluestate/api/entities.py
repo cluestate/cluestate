@@ -5,9 +5,11 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_session
-from ..models import Entity, Episode, Evidence, Memory, MemoryStatus, Topic, Workspace
-from ..schemas import EntityCreate, EntityDetail, EntityRead, EpisodeRead, EvidenceRead, MemoryRead
+from ..engine import compile_entity_state
+from ..models import Entity, Episode, Evidence, Memory, MemoryStatus, Workspace
+from ..schemas import EntityCreate, EntityDetail, EntityRead, EpisodeRead
 from ..security import get_current_workspace
+from .memories import hydrate_memory_reads
 
 router = APIRouter(prefix="/entities", tags=["Entities"])
 
@@ -56,7 +58,7 @@ async def list_entities(
     workspace: Workspace = Depends(get_current_workspace),
     session: AsyncSession = Depends(get_session),
 ):
-    """List tracked entities in the active workspace."""
+    """List tracked entities in the active workspace with batched memory counts (zero N+1)."""
     query = (
         select(Entity)
         .where(Entity.workspace_id == workspace.id)
@@ -70,20 +72,27 @@ async def list_entities(
         )
 
     result = await session.execute(query)
-    entities = result.scalars().all()
+    entities = list(result.scalars().all())
+    if not entities:
+        return []
 
-    response = []
-    for entity in entities:
-        count_result = await session.execute(
-            select(func.count()).where(
-                Memory.entity_id == entity.id,
+    entity_ids = [e.id for e in entities if e.id is not None]
+    counts_by_entity: dict[int, int] = {}
+    if entity_ids:
+        cnt_res = await session.execute(
+            select(Memory.entity_id, func.count(Memory.id))
+            .where(
+                Memory.entity_id.in_(entity_ids),
                 Memory.status.in_([MemoryStatus.ACTIVE, MemoryStatus.CONFIRMED]),
             )
+            .group_by(Memory.entity_id)
         )
-        count = count_result.scalar() or 0
-        response.append(EntityRead(**entity.model_dump(), memory_count=count))
+        counts_by_entity = {row[0]: row[1] for row in cnt_res.all()}
 
-    return response
+    return [
+        EntityRead(**entity.model_dump(), memory_count=counts_by_entity.get(entity.id, 0) if entity.id else 0)
+        for entity in entities
+    ]
 
 
 @router.get("/{entity_id}", response_model=EntityDetail)
@@ -92,7 +101,7 @@ async def get_entity(
     workspace: Workspace = Depends(get_current_workspace),
     session: AsyncSession = Depends(get_session),
 ):
-    """Get entity details with all active memories and evidence."""
+    """Get entity details with all active memories, evidence, and compiled state."""
     entity = await session.get(Entity, entity_id)
     if not entity or entity.workspace_id != workspace.id:
         raise HTTPException(status_code=404, detail="Entity not found")
@@ -103,33 +112,17 @@ async def get_entity(
             Memory.entity_id == entity.id,
             Memory.status.in_([MemoryStatus.ACTIVE, MemoryStatus.CONFIRMED]),
         )
-        .order_by(Memory.confidence.desc())
+        .order_by(Memory.confidence.desc(), Memory.updated_at.desc())
     )
-    memories = result.scalars().all()
-
-    topic_ids = {m.topic_id for m in memories if m.topic_id}
-    topic_map: dict[int, str] = {}
-    if topic_ids:
-        t_res = await session.execute(select(Topic).where(Topic.id.in_(topic_ids)))
-        for t in t_res.scalars().all():
-            topic_map[t.id] = t.name
-
-    mem_reads = []
-    for m in memories:
-        ev_res = await session.execute(select(Evidence).where(Evidence.memory_id == m.id))
-        evidence = [EvidenceRead(**ev.model_dump()) for ev in ev_res.scalars().all()]
-        mem_reads.append(
-            MemoryRead(
-                **m.model_dump(),
-                topic_name=topic_map.get(m.topic_id) if m.topic_id else None,
-                evidence=evidence,
-            )
-        )
+    memories = list(result.scalars().all())
+    mem_reads, topics_by_id = await hydrate_memory_reads(session, memories, workspace.id)
+    compiled_state = compile_entity_state(memories, topics_by_id)
 
     return EntityDetail(
         **entity.model_dump(),
         memory_count=len(memories),
         memories=mem_reads,
+        state=compiled_state,
     )
 
 
@@ -166,27 +159,21 @@ async def delete_entity(
     if not entity or entity.workspace_id != workspace.id:
         raise HTTPException(status_code=404, detail="Entity not found")
 
-    # 1. Find all memory IDs and episode IDs for this entity
     mem_ids_res = await session.execute(select(Memory.id).where(Memory.entity_id == entity_id))
     mem_ids = [row[0] for row in mem_ids_res.all()]
 
     ep_ids_res = await session.execute(select(Episode.id).where(Episode.entity_id == entity_id))
     ep_ids = [row[0] for row in ep_ids_res.all()]
 
-    # 2. Delete all evidence linked to these memories or episodes
     if mem_ids:
         await session.execute(delete(Evidence).where(Evidence.memory_id.in_(mem_ids)))
-        # Clear self-referential superseded_by_id foreign keys before deleting memories
         await session.execute(
             update(Memory).where(Memory.entity_id == entity_id).values(superseded_by_id=None)
         )
     if ep_ids:
         await session.execute(delete(Evidence).where(Evidence.episode_id.in_(ep_ids)))
 
-    # 3. Delete memories and episodes
     await session.execute(delete(Memory).where(Memory.entity_id == entity_id))
     await session.execute(delete(Episode).where(Episode.entity_id == entity_id))
-
-    # 4. Delete the entity itself
     await session.delete(entity)
     await session.commit()

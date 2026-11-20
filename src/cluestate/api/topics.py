@@ -1,4 +1,4 @@
-"""Topic CRUD endpoints scoped to the active workspace."""
+"""Topic / Memory Tag CRUD endpoints scoped to the active workspace."""
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
@@ -16,6 +16,9 @@ SENSITIVE_TOPIC_KEYWORDS = (
     "allergies",
     "medical",
     "health",
+    "medication",
+    "condition",
+    "diagnosis",
     "dietary_restriction",
     "budget",
     "salary",
@@ -35,7 +38,7 @@ async def create_topic(
     workspace: Workspace = Depends(get_current_workspace),
     session: AsyncSession = Depends(get_session),
 ):
-    """Create a new topic (attribute schema) to track in the active workspace."""
+    """Create a new topic (memory tag schema) to track in the active workspace."""
     existing = await session.execute(
         select(Topic).where(
             Topic.workspace_id == workspace.id,
@@ -52,15 +55,26 @@ async def create_topic(
     if "update_policy" not in body.model_fields_set and _is_sensitive_topic(body.name):
         effective_policy = UpdatePolicy.REVIEW
 
+    effective_temporal = body.temporal or bool(body.ttl_days and body.ttl_days > 0)
+
     topic = Topic(
         workspace_id=workspace.id,
         name=body.name,
+        label=body.label.strip(),
         description=body.description,
+        extraction_instructions=body.extraction_instructions,
+        examples=body.examples,
         data_type=body.data_type,
         cardinality=body.cardinality,
         update_policy=effective_policy,
-        temporal=body.temporal,
+        temporal=effective_temporal,
+        ttl_days=body.ttl_days,
         enum_values=body.enum_values,
+        allow_custom_values=body.allow_custom_values,
+        allow_inferred=body.allow_inferred,
+        min_confidence=body.min_confidence,
+        constraints=body.constraints,
+        applies_to_entity_types=body.applies_to_entity_types,
         schema_version=1,
     )
     session.add(topic)
@@ -91,14 +105,25 @@ async def update_topic(
     workspace: Workspace = Depends(get_current_workspace),
     session: AsyncSession = Depends(get_session),
 ):
-    """Update a topic and increment its schema version."""
+    """Update a topic and increment its schema version when contract rules change."""
     topic = await session.get(Topic, topic_id)
     if not topic or topic.workspace_id != workspace.id:
         raise HTTPException(status_code=404, detail="Topic not found")
 
     update_data = body.model_dump(exclude_unset=True)
     schema_changed = any(
-        k in update_data for k in ("data_type", "cardinality", "update_policy", "enum_values")
+        k in update_data
+        for k in (
+            "data_type",
+            "cardinality",
+            "update_policy",
+            "enum_values",
+            "allow_custom_values",
+            "allow_inferred",
+            "min_confidence",
+            "constraints",
+            "extraction_instructions",
+        )
     )
     for key, value in update_data.items():
         setattr(topic, key, value)

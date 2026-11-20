@@ -55,6 +55,51 @@ class ClaimOperation(str, Enum):
     ABSTAIN = "abstain"
 
 
+class WorkspaceRole(str, Enum):
+    OWNER = "owner"
+    ADMIN = "admin"
+    MEMBER = "member"
+    VIEWER = "viewer"
+
+
+class DiscoveryMode(str, Enum):
+    STRICT = "strict"
+    GUIDED = "guided"
+    OPEN = "open"
+
+
+DEFAULT_EXTRACTION_POLICY: dict[str, Any] = {
+    "discovery_mode": "guided",
+    "discovery_instructions": "",
+    "discovery_review_policy": "active",
+    "discovery_allow_inferred": True,
+    "discovery_max_per_episode": 5,
+}
+
+
+def normalize_extraction_policy(raw: Optional[dict[str, Any]]) -> dict[str, Any]:
+    """Merge user policy dict with safe defaults."""
+    base = dict(DEFAULT_EXTRACTION_POLICY)
+    if not raw or not isinstance(raw, dict):
+        return base
+    mode = str(raw.get("discovery_mode", base["discovery_mode"])).lower().strip()
+    if mode not in ("strict", "guided", "open"):
+        mode = "guided"
+    base["discovery_mode"] = mode
+    base["discovery_instructions"] = str(raw.get("discovery_instructions", "") or "").strip()
+    rev = str(raw.get("discovery_review_policy", base["discovery_review_policy"])).lower().strip()
+    if rev not in ("active", "pending_review"):
+        rev = "active"
+    base["discovery_review_policy"] = rev
+    base["discovery_allow_inferred"] = bool(raw.get("discovery_allow_inferred", True))
+    try:
+        max_ep = int(raw.get("discovery_max_per_episode", 5))
+        base["discovery_max_per_episode"] = max(0, min(50, max_ep))
+    except (ValueError, TypeError):
+        base["discovery_max_per_episode"] = 5
+    return base
+
+
 class SourceType(str, Enum):
     CONVERSATION = "conversation"
     NOTE = "note"
@@ -133,10 +178,50 @@ class Workspace(SQLModel, table=True):
         default_factory=lambda: list(DEFAULT_SOURCE_TYPES),
         sa_column=Column("source_types", JSON, nullable=False, server_default='["conversation", "note", "interaction", "custom"]'),
     )
+    extraction_policy: dict = Field(
+        default_factory=lambda: dict(DEFAULT_EXTRACTION_POLICY),
+        sa_column=Column(
+            "extraction_policy",
+            JSON,
+            nullable=False,
+            server_default='{"discovery_mode": "guided", "discovery_instructions": "", "discovery_review_policy": "active", "discovery_allow_inferred": true, "discovery_max_per_episode": 5}',
+        ),
+    )
     created_at: datetime = Field(default_factory=_utcnow)
 
     owner: Optional[User] = Relationship(back_populates="workspaces")
     api_keys: list["ApiKey"] = Relationship(back_populates="workspace")
+
+
+class WorkspaceMember(SQLModel, table=True):
+    """Membership and role of a User within a Workspace."""
+
+    __tablename__ = "workspace_members"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "user_id", name="uq_workspace_member"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    workspace_id: int = Field(foreign_key="workspaces.id", index=True)
+    user_id: int = Field(foreign_key="users.id", index=True)
+    role: WorkspaceRole = Field(default=WorkspaceRole.MEMBER)
+    joined_at: datetime = Field(default_factory=_utcnow)
+
+
+class WorkspaceInvite(SQLModel, table=True):
+    """Zero-SMTP single-use invitation link to join a Workspace."""
+
+    __tablename__ = "workspace_invites"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    workspace_id: int = Field(foreign_key="workspaces.id", index=True)
+    token: str = Field(index=True, unique=True, max_length=128)
+    email: str = Field(default="", max_length=255)
+    role: WorkspaceRole = Field(default=WorkspaceRole.MEMBER)
+    created_by_id: Optional[int] = Field(default=None, foreign_key="users.id")
+    expires_at: datetime = Field(default_factory=_utcnow)
+    accepted_at: Optional[datetime] = Field(default=None)
+    created_at: datetime = Field(default_factory=_utcnow)
 
 
 class ApiKey(SQLModel, table=True):
@@ -182,7 +267,7 @@ class Entity(SQLModel, table=True):
 
 
 class Topic(SQLModel, table=True):
-    """A schema-defined attribute category to track (e.g., 'dietary_preference', 'budget')."""
+    """A schema-defined attribute category / memory tag to track (e.g., 'is_vegan', 'allergies', 'budget')."""
 
     __tablename__ = "topics"
     __table_args__ = (
@@ -192,12 +277,21 @@ class Topic(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     workspace_id: int = Field(default=1, foreign_key="workspaces.id", index=True)
     name: str = Field(index=True, max_length=255)
+    label: str = Field(default="", max_length=255, sa_column=Column(String(255), nullable=False, server_default=""))
     description: str = Field(default="", sa_column=Column(Text, nullable=False, server_default=""))
-    data_type: str = Field(default="text", max_length=50)  # text, number, boolean, enum, list
+    extraction_instructions: str = Field(default="", sa_column=Column(Text, nullable=False, server_default=""))
+    examples: list = Field(default_factory=list, sa_column=Column("examples", JSON, nullable=False, server_default="[]"))
+    data_type: str = Field(default="text", max_length=50)  # text, number, boolean, enum, list, single_select, multi_select, date
     cardinality: TopicCardinality = Field(default=TopicCardinality.MULTIPLE)
     update_policy: UpdatePolicy = Field(default=UpdatePolicy.APPEND)
     temporal: bool = Field(default=False)
+    ttl_days: Optional[int] = Field(default=None, nullable=True)
     enum_values: list = Field(default_factory=list, sa_column=Column("enum_values", JSON, nullable=False, server_default="[]"))
+    allow_custom_values: bool = Field(default=False)
+    allow_inferred: bool = Field(default=True)
+    min_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    constraints: dict = Field(default_factory=dict, sa_column=Column("constraints", JSON, nullable=False, server_default="{}"))
+    applies_to_entity_types: list = Field(default_factory=list, sa_column=Column("applies_to_entity_types", JSON, nullable=False, server_default="[]"))
     schema_version: int = Field(default=1)
     is_active: bool = Field(default=True)
     created_at: datetime = Field(default_factory=_utcnow)

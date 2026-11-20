@@ -8,6 +8,10 @@ export type TopicCardinality = 'single' | 'multiple';
 
 export type UpdatePolicy = 'replace' | 'append' | 'review';
 
+export type WorkspaceRole = 'owner' | 'admin' | 'member' | 'viewer';
+
+export type DiscoveryMode = 'strict' | 'guided' | 'open';
+
 export type DefaultSourceType =
   | 'conversation'
   | 'note'
@@ -29,6 +33,14 @@ export interface SourceTypesResponse {
   defaults: string[];
 }
 
+export interface ExtractionPolicy {
+  discovery_mode: DiscoveryMode;
+  discovery_instructions: string;
+  discovery_review_policy: 'active' | 'pending_review';
+  discovery_allow_inferred: boolean;
+  discovery_max_per_episode: number;
+}
+
 export interface User {
   id: number;
   email: string;
@@ -40,7 +52,43 @@ export interface Workspace {
   id: number;
   name: string;
   slug: string;
+  owner_id?: number | null;
+  role?: WorkspaceRole | null;
+  extraction_policy?: ExtractionPolicy;
+  source_types?: string[];
   created_at: string;
+}
+
+export interface WorkspaceMember {
+  id: number;
+  workspace_id: number;
+  user_id: number;
+  email: string;
+  full_name: string;
+  role: WorkspaceRole;
+  joined_at: string;
+}
+
+export interface WorkspaceInvite {
+  id: number;
+  workspace_id: number;
+  workspace_name: string;
+  token: string;
+  email: string;
+  role: WorkspaceRole;
+  expires_at: string;
+  accepted_at?: string | null;
+  created_at: string;
+}
+
+export interface InviteInspectInfo {
+  token: string;
+  workspace_id: number;
+  workspace_name: string;
+  workspace_slug: string;
+  email: string;
+  role: WorkspaceRole;
+  expires_at: string;
 }
 
 export interface AuthResponse {
@@ -48,6 +96,7 @@ export interface AuthResponse {
   token_type: string;
   user: User;
   workspace: Workspace;
+  workspaces?: Workspace[];
   initial_api_key?: string | null;
 }
 
@@ -73,11 +122,17 @@ export interface Evidence {
   char_end?: number | null;
   content_hash?: string;
   created_at: string;
+  episode_content?: string | null;
+  episode_source_type?: string | null;
+  episode_description?: string | null;
+  episode_occurred_at?: string | null;
 }
 
 export interface Memory {
   id: number;
   entity_id: number;
+  entity_name?: string | null;
+  entity_external_id?: string | null;
   topic_id?: number | null;
   topic_name?: string | null;
   claim: string;
@@ -104,17 +159,33 @@ export interface Entity {
   updated_at: string;
   memory_count?: number;
   memories?: Memory[];
+  state?: Record<string, any>;
+}
+
+export interface TopicConstraints {
+  unit?: string;
+  min?: number | null;
+  max?: number | null;
 }
 
 export interface Topic {
   id: number;
   name: string;
+  label?: string;
   description: string;
+  extraction_instructions?: string;
+  examples?: string[];
   data_type: string;
   cardinality: TopicCardinality;
   update_policy: UpdatePolicy;
   temporal: boolean;
+  ttl_days?: number | null;
   enum_values: string[];
+  allow_custom_values?: boolean;
+  allow_inferred?: boolean;
+  min_confidence?: number;
+  constraints?: TopicConstraints;
+  applies_to_entity_types?: string[];
   schema_version: number;
   is_active: boolean;
   created_at: string;
@@ -133,10 +204,17 @@ export interface Episode {
   created_at: string;
 }
 
+export interface SystemInfo {
+  version: string;
+  llm_model: string;
+  database: string;
+}
+
 export interface DashboardStats {
   total_entities: number;
   total_memories: number;
   active_memories: number;
+  pending_review_memories?: number;
   total_episodes: number;
   total_topics: number;
   status_counts: Record<string, number>;
@@ -151,19 +229,29 @@ export interface DashboardStats {
     id: number;
     entity_id: number;
     entity_name: string;
+    entity_external_id?: string;
     topic_id?: number | null;
     topic_name: string;
     claim: string;
     value: string;
+    structured_value?: any;
     claim_type?: ClaimType;
     confidence: number;
     status: MemoryStatus;
+    is_verified?: boolean;
+    char_start?: number | null;
+    char_end?: number | null;
+    excerpt?: string;
     created_at: string;
   }[];
   topic_distribution: {
     name: string;
+    label?: string;
+    data_type?: string;
     count: number;
   }[];
+  extraction_policy?: ExtractionPolicy;
+  system_info?: SystemInfo;
 }
 
 export interface IntelResponse {
@@ -171,6 +259,7 @@ export interface IntelResponse {
   entity_name: string;
   entity_type: EntityType;
   formatted_prompt: string;
+  state: Record<string, any>;
   memories: Memory[];
   total_memories: number;
   total_episodes: number;
@@ -183,6 +272,8 @@ export interface IngestResponse {
   memories_updated: number;
   memories_new: number;
   idempotent_replay?: boolean;
+  dry_run?: boolean;
+  state?: Record<string, any>;
   memories: Memory[];
 }
 

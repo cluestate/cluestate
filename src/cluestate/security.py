@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import get_settings
 from .database import ensure_default_workspace, get_session
-from .models import ApiKey, User, Workspace
+from .models import ApiKey, User, Workspace, WorkspaceMember, WorkspaceRole
 
 PBKDF2_ITERATIONS = 600_000
 
@@ -153,6 +153,95 @@ def _extract_bearer_token(request: Request) -> Optional[str]:
     return token or None
 
 
+def _extract_requested_workspace_id(request: Request, fallback: Optional[int]) -> Optional[int]:
+    """Read optional X-Workspace-Id header so users can switch workspaces without re-minting JWTs."""
+    header_val = request.headers.get("X-Workspace-Id", "").strip()
+    if header_val:
+        try:
+            return int(header_val)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid X-Workspace-Id header",
+            )
+    return int(fallback) if fallback is not None else None
+
+
+async def get_user_workspace_role(
+    session: AsyncSession,
+    user_id: int,
+    workspace: Workspace,
+) -> Optional[WorkspaceRole]:
+    """Return user's role in workspace, or None if not a member/owner."""
+    res = await session.execute(
+        select(WorkspaceMember).where(
+            WorkspaceMember.workspace_id == workspace.id,
+            WorkspaceMember.user_id == user_id,
+        )
+    )
+    member = res.scalars().first()
+    if member:
+        return member.role
+    if workspace.owner_id == user_id:
+        return WorkspaceRole.OWNER
+    return None
+
+
+async def list_user_workspaces(
+    session: AsyncSession,
+    user_id: int,
+) -> list[tuple[Workspace, WorkspaceRole]]:
+    """Return all workspaces a user owns or is a member of, paired with their role."""
+    mem_res = await session.execute(
+        select(Workspace, WorkspaceMember.role)
+        .join(WorkspaceMember, Workspace.id == WorkspaceMember.workspace_id)
+        .where(WorkspaceMember.user_id == user_id)
+        .order_by(Workspace.id)
+    )
+    by_id: dict[int, tuple[Workspace, WorkspaceRole]] = {}
+    for ws, role in mem_res.all():
+        if ws.id is not None:
+            by_id[ws.id] = (ws, role)
+
+    owned_res = await session.execute(
+        select(Workspace).where(Workspace.owner_id == user_id).order_by(Workspace.id)
+    )
+    for ws in owned_res.scalars().all():
+        if ws.id is not None and ws.id not in by_id:
+            by_id[ws.id] = (ws, WorkspaceRole.OWNER)
+
+    return list(by_id.values())
+
+
+async def _resolve_user_workspace(
+    request: Request,
+    session: AsyncSession,
+    user: User,
+    jwt_workspace_id: Optional[int],
+) -> Workspace:
+    """Resolve and verify the active workspace for an authenticated User JWT request."""
+    target_id = _extract_requested_workspace_id(request, jwt_workspace_id)
+    workspace = await session.get(Workspace, target_id) if target_id else None
+
+    if workspace:
+        role = await get_user_workspace_role(session, user.id, workspace)
+        if role is not None:
+            return workspace
+        # If the user explicitly requested a workspace via X-Workspace-Id they don't belong to, deny with 403
+        if request.headers.get("X-Workspace-Id"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have access to this workspace",
+            )
+
+    # Fallback: pick the user's first accessible workspace
+    accessible = await list_user_workspaces(session, user.id)
+    if accessible:
+        return accessible[0][0]
+
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+
+
 async def get_current_workspace(
     request: Request,
     session: AsyncSession = Depends(get_session),
@@ -210,11 +299,7 @@ async def get_current_workspace(
     if not user or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User account inactive or not found")
 
-    workspace = await session.get(Workspace, workspace_id)
-    if not workspace:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Workspace not found")
-
-    return workspace
+    return await _resolve_user_workspace(request, session, user, workspace_id)
 
 
 async def get_current_user(
@@ -244,15 +329,12 @@ async def get_current_user(
         )
 
     user_id = int(payload.get("sub", 0))
-    workspace_id = int(payload.get("workspace_id", 0))
+    workspace_id = payload.get("workspace_id")
 
     user = await session.get(User, user_id)
     if not user or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
 
-    workspace = await session.get(Workspace, workspace_id)
-    if not workspace:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
-
+    workspace = await _resolve_user_workspace(request, session, user, workspace_id)
     return user, workspace
 

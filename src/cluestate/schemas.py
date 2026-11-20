@@ -6,12 +6,15 @@ from typing import Any, Optional
 from pydantic import BaseModel, Field, field_validator
 
 from .models import (
+    DEFAULT_EXTRACTION_POLICY,
     DEFAULT_SOURCE_TYPES,
     ClaimType,
     EntityType,
     MemoryStatus,
     TopicCardinality,
     UpdatePolicy,
+    WorkspaceRole,
+    normalize_extraction_policy,
     normalize_source_type,
 )
 
@@ -42,7 +45,69 @@ class WorkspaceRead(BaseModel):
     id: int
     name: str
     slug: str
+    owner_id: Optional[int] = None
+    role: Optional[WorkspaceRole] = None
+    extraction_policy: dict[str, Any] = Field(default_factory=lambda: dict(DEFAULT_EXTRACTION_POLICY))
+    source_types: list[str] = Field(default_factory=lambda: list(DEFAULT_SOURCE_TYPES))
     created_at: datetime
+
+    @field_validator("extraction_policy", mode="before")
+    @classmethod
+    def _ensure_policy(cls, v: Any) -> dict[str, Any]:
+        return normalize_extraction_policy(v if isinstance(v, dict) else None)
+
+
+class WorkspaceCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    clone_schema_from_workspace_id: Optional[int] = None
+
+
+class WorkspaceUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    extraction_policy: Optional[dict[str, Any]] = None
+
+
+class WorkspaceMemberRead(BaseModel):
+    id: int
+    workspace_id: int
+    user_id: int
+    email: str
+    full_name: str
+    role: WorkspaceRole
+    joined_at: datetime
+
+
+class WorkspaceMemberAdd(BaseModel):
+    email: str = Field(..., min_length=3, max_length=255)
+    role: WorkspaceRole = WorkspaceRole.MEMBER
+
+
+class WorkspaceMemberUpdate(BaseModel):
+    role: WorkspaceRole
+
+
+class WorkspaceInviteCreate(BaseModel):
+    email: str = Field(default="", max_length=255)
+    role: WorkspaceRole = WorkspaceRole.MEMBER
+    expires_in_days: int = Field(default=7, ge=1, le=90)
+
+
+class WorkspaceInviteRead(BaseModel):
+    id: int
+    workspace_id: int
+    workspace_name: str = ""
+    token: str
+    email: str = ""
+    role: WorkspaceRole
+    expires_at: datetime
+    accepted_at: Optional[datetime] = None
+    created_at: datetime
+
+
+class InviteAcceptRequest(BaseModel):
+    email: Optional[str] = None
+    full_name: str = ""
+    password: Optional[str] = None
 
 
 class AuthResponse(BaseModel):
@@ -50,6 +115,7 @@ class AuthResponse(BaseModel):
     token_type: str = "bearer"
     user: UserRead
     workspace: WorkspaceRead
+    workspaces: list[WorkspaceRead] = []
     initial_api_key: Optional[str] = None
 
 
@@ -94,41 +160,69 @@ class EntityRead(BaseModel):
 
 class EntityDetail(EntityRead):
     memories: list["MemoryRead"] = []
+    state: dict[str, Any] = Field(default_factory=dict)
 
 
 # ──────────────────────────────────────────────
-# Topic Schemas
+# Topic / Memory Tag Schemas
 # ──────────────────────────────────────────────
 
 class TopicCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
+    label: str = ""
     description: str = ""
+    extraction_instructions: str = ""
+    examples: list[Any] = []
     data_type: str = "text"
     cardinality: TopicCardinality = TopicCardinality.MULTIPLE
     update_policy: UpdatePolicy = UpdatePolicy.APPEND
     temporal: bool = False
+    ttl_days: Optional[int] = Field(default=None, ge=1, le=3650)
     enum_values: list[str] = []
+    allow_custom_values: bool = False
+    allow_inferred: bool = True
+    min_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    constraints: dict[str, Any] = Field(default_factory=dict)
+    applies_to_entity_types: list[str] = Field(default_factory=list)
 
 
 class TopicUpdate(BaseModel):
+    label: Optional[str] = None
     description: Optional[str] = None
+    extraction_instructions: Optional[str] = None
+    examples: Optional[list[Any]] = None
     data_type: Optional[str] = None
     cardinality: Optional[TopicCardinality] = None
     update_policy: Optional[UpdatePolicy] = None
     temporal: Optional[bool] = None
+    ttl_days: Optional[int] = None
     enum_values: Optional[list[str]] = None
+    allow_custom_values: Optional[bool] = None
+    allow_inferred: Optional[bool] = None
+    min_confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    constraints: Optional[dict[str, Any]] = None
+    applies_to_entity_types: Optional[list[str]] = None
     is_active: Optional[bool] = None
 
 
 class TopicRead(BaseModel):
     id: int
     name: str
+    label: str = ""
     description: str
+    extraction_instructions: str = ""
+    examples: list = []
     data_type: str
     cardinality: TopicCardinality
     update_policy: UpdatePolicy
     temporal: bool
+    ttl_days: Optional[int] = None
     enum_values: list
+    allow_custom_values: bool = False
+    allow_inferred: bool = True
+    min_confidence: float = 0.0
+    constraints: dict[str, Any] = Field(default_factory=dict)
+    applies_to_entity_types: list[str] = Field(default_factory=list)
     schema_version: int = 1
     is_active: bool
     created_at: datetime
@@ -141,6 +235,8 @@ class TopicRead(BaseModel):
 class MemoryRead(BaseModel):
     id: int
     entity_id: int
+    entity_name: Optional[str] = None
+    entity_external_id: Optional[str] = None
     topic_id: Optional[int]
     topic_name: Optional[str] = None
     claim: str
@@ -160,6 +256,9 @@ class MemoryRead(BaseModel):
 class MemoryUpdate(BaseModel):
     status: Optional[MemoryStatus] = None
     confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    claim: Optional[str] = None
+    value: Optional[str] = None
+    topic_id: Optional[int] = None
 
 
 # ──────────────────────────────────────────────
@@ -188,6 +287,10 @@ class EvidenceRead(BaseModel):
     char_end: Optional[int] = None
     content_hash: str = ""
     created_at: datetime
+    episode_content: Optional[str] = None
+    episode_source_type: Optional[str] = None
+    episode_description: Optional[str] = None
+    episode_occurred_at: Optional[datetime] = None
 
 
 # ──────────────────────────────────────────────
@@ -211,6 +314,7 @@ class IngestRequest(BaseModel):
     meta: dict = Field(default_factory=dict, description="Any additional metadata about this ingestion")
     auto_create_entity: bool = Field(default=True, description="If true, create the entity if it doesn't exist")
     entity_name: str = Field(default="", description="Name for auto-created entity")
+    dry_run: bool = Field(default=False, description="If true, simulate extraction and schema validation without persisting state")
 
     @field_validator("source_type", mode="before")
     @classmethod
@@ -239,6 +343,8 @@ class IngestResponse(BaseModel):
     memories_updated: int
     memories_new: int
     idempotent_replay: bool = False
+    dry_run: bool = False
+    state: dict[str, Any] = Field(default_factory=dict)
     memories: list[MemoryRead]
 
 
@@ -252,6 +358,7 @@ class IntelResponse(BaseModel):
     entity_name: str
     entity_type: EntityType
     formatted_prompt: str = Field(description="Ready-to-use text block for system context")
+    state: dict[str, Any] = Field(default_factory=dict, description="Compiled key-value state dictionary mapped by topic slug")
     memories: list[MemoryRead] = []
     total_memories: int = 0
     total_episodes: int = 0

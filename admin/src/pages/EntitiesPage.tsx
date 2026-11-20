@@ -4,14 +4,13 @@ import {
   Search,
   UserPlus,
   Trash2,
-  ExternalLink,
+  ArrowUpRight,
   Copy,
   Check,
-  Brain,
-  Filter,
 } from 'lucide-react';
 import type { Entity } from '../types';
 import { api } from '../api';
+import { useToast } from '../components/Toast';
 
 interface EntitiesPageProps {
   onSelectEntity: (entityId: number) => void;
@@ -22,21 +21,20 @@ export const EntitiesPage: React.FC<EntitiesPageProps> = ({
   onSelectEntity,
   onOpenNewEntity,
 }) => {
+  const { notify, confirmAction } = useToast();
   const [entities, setEntities] = useState<Entity[]>([]);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const fetchEntities = async () => {
     try {
       setIsLoading(true);
-      setError(null);
       const data = await api.listEntities(search, 100);
       setEntities(data);
     } catch (err: any) {
-      setError(err.message || 'Failed to load entities');
+      notify(err.message || 'Failed to load profiles', 'error');
     } finally {
       setIsLoading(false);
     }
@@ -45,28 +43,35 @@ export const EntitiesPage: React.FC<EntitiesPageProps> = ({
   useEffect(() => {
     const timer = setTimeout(() => {
       fetchEntities();
-    }, 250);
+    }, 200);
     return () => clearTimeout(timer);
   }, [search]);
 
-  const handleDeleteEntity = async (entityId: number, e: React.MouseEvent) => {
+  const handleDeleteEntity = (entity: Entity, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm('Are you sure you want to delete this entity and all associated memories and episodes?')) {
-      return;
-    }
-
-    try {
-      await api.deleteEntity(entityId);
-      setEntities(entities.filter((ent) => ent.id !== entityId));
-    } catch (err: any) {
-      alert(err.message || 'Failed to delete entity');
-    }
+    confirmAction({
+      title: `Delete Profile "${entity.name || entity.external_id}"?`,
+      description:
+        'This permanently deletes the profile and all associated memories, source episodes, and evidence spans.',
+      confirmLabel: 'Delete Profile',
+      danger: true,
+      onConfirm: async () => {
+        try {
+          await api.deleteEntity(entity.id);
+          setEntities((prev) => prev.filter((ent) => ent.id !== entity.id));
+          notify(`Deleted profile ${entity.name || entity.external_id}`, 'info');
+        } catch (err: any) {
+          notify(err.message || 'Failed to delete profile', 'error');
+        }
+      },
+    });
   };
 
   const handleCopyId = (externalId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     navigator.clipboard.writeText(externalId);
     setCopiedId(externalId);
+    notify(`Copied external ID: ${externalId}`, 'info');
     setTimeout(() => setCopiedId(null), 1500);
   };
 
@@ -90,60 +95,57 @@ export const EntitiesPage: React.FC<EntitiesPageProps> = ({
   return (
     <div className="page-container">
       {/* Header */}
-      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
+      <div className="page-header">
         <div>
-          <h1 className="page-title">Tracked Entities</h1>
+          <div className="page-eyebrow">ENTITY DIRECTORY</div>
+          <h1 className="page-title">Tracked Profiles &amp; Entities</h1>
           <p className="page-subtitle">
-            Customers, patients, users, or organizations with continuously evolving intelligence profiles.
+            Patients, clients, users, and organizations with schema-enforced state ledgers.
           </p>
         </div>
 
-        <button className="btn btn-primary" onClick={onOpenNewEntity}>
-          <UserPlus size={16} />
-          <span>New Entity</span>
+        <button className="btn btn-primary btn-sm" onClick={onOpenNewEntity}>
+          <UserPlus size={14} />
+          <span>New Profile</span>
         </button>
       </div>
 
-      {error && (
-        <div
-          style={{
-            padding: '12px 16px',
-            background: 'var(--danger-bg)',
-            color: 'var(--danger)',
-            borderRadius: 'var(--radius-sm)',
-            marginBottom: '20px',
-            fontSize: '14px',
-          }}
-        >
-          {error}
-        </div>
-      )}
-
       {/* Filter / Search Bar */}
-      <div style={{ display: 'flex', gap: '14px', marginBottom: '20px', flexWrap: 'wrap' }}>
-        <div className="search-bar" style={{ flex: 1, minWidth: '260px' }}>
-          <Search className="search-bar-icon" size={16} />
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: '12px',
+          marginBottom: '18px',
+          flexWrap: 'wrap',
+        }}
+      >
+        <div className="search-bar" style={{ flex: 1, minWidth: '260px', maxWidth: '420px' }}>
+          <Search className="search-bar-icon" size={14} />
           <input
             type="text"
             className="input"
-            placeholder="Search entities by name or external ID..."
+            placeholder="Search by name or external ID…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
 
-        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-          <Filter size={15} color="var(--text-muted)" />
-          {(['all', 'person', 'organization', 'product', 'location', 'custom'] as const).map((type) => (
-            <button
-              key={type}
-              className={`btn btn-sm ${typeFilter === type ? 'btn-primary' : 'btn-secondary'}`}
-              onClick={() => setTypeFilter(type)}
-              style={{ textTransform: 'capitalize' }}
-            >
-              {type}
-            </button>
-          ))}
+        <div className="segmented-control">
+          {(['all', 'person', 'organization', 'product', 'location', 'custom'] as const).map(
+            (type) => (
+              <button
+                key={type}
+                type="button"
+                className={`segmented-option ${typeFilter === type ? 'active' : ''}`}
+                onClick={() => setTypeFilter(type)}
+                style={{ textTransform: 'capitalize' }}
+              >
+                {type === 'all' ? 'All Profiles' : type}
+              </button>
+            )
+          )}
         </div>
       </div>
 
@@ -152,61 +154,54 @@ export const EntitiesPage: React.FC<EntitiesPageProps> = ({
         <table>
           <thead>
             <tr>
-              <th>Entity</th>
-              <th>External ID</th>
-              <th>Type</th>
-              <th>Active Facts</th>
-              <th>Created</th>
+              <th>Profile Name</th>
+              <th>External Identifier</th>
+              <th>Classification</th>
+              <th>Active State Facts</th>
+              <th>Tracked Since</th>
               <th style={{ textAlign: 'right' }}>Actions</th>
             </tr>
           </thead>
           <tbody>
             {filteredEntities.map((entity) => (
-              <tr key={entity.id} onClick={() => onSelectEntity(entity.id)}>
+              <tr
+                key={entity.id}
+                className="clickable"
+                onClick={() => onSelectEntity(entity.id)}
+              >
                 <td>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <div
+                      className="mono"
                       style={{
-                        width: '36px',
-                        height: '36px',
-                        borderRadius: '50%',
-                        background: 'rgba(99, 102, 241, 0.15)',
-                        color: 'var(--accent-primary-hover)',
+                        width: '28px',
+                        height: '28px',
+                        borderRadius: '4px',
+                        background: 'var(--bg-well)',
+                        border: '1px solid var(--border-subtle)',
+                        color: 'var(--text-primary)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                         fontWeight: 600,
-                        fontSize: '14px',
+                        fontSize: '12px',
                       }}
                     >
-                      {entity.name ? entity.name[0].toUpperCase() : 'E'}
+                      {entity.name ? entity.name[0].toUpperCase() : 'P'}
                     </div>
                     <div>
                       <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                        {entity.name || 'Unnamed Entity'}
-                      </div>
-                      <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                        ID #{entity.id}
+                        {entity.name || 'Unnamed Profile'}
                       </div>
                     </div>
                   </div>
                 </td>
                 <td>
                   <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                    <code
-                      style={{
-                        background: 'rgba(0, 0, 0, 0.25)',
-                        padding: '2px 8px',
-                        borderRadius: '4px',
-                        fontSize: '12px',
-                        color: 'var(--text-accent)',
-                      }}
-                    >
-                      {entity.external_id}
-                    </code>
+                    <code className="tag-pill">{entity.external_id}</code>
                     <button
-                      className="btn btn-ghost btn-sm"
-                      style={{ padding: '2px 6px', height: 'auto' }}
+                      type="button"
+                      className="btn btn-ghost btn-xs"
                       title="Copy External ID"
                       onClick={(e) => handleCopyId(entity.external_id, e)}
                     >
@@ -224,39 +219,39 @@ export const EntitiesPage: React.FC<EntitiesPageProps> = ({
                   </span>
                 </td>
                 <td>
-                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                    <Brain size={14} color="var(--accent-primary)" />
-                    <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                      {entity.memory_count ?? 0}
-                    </span>
-                    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>memories</span>
-                  </div>
+                  <span className="mono" style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                    {entity.memory_count ?? 0}
+                  </span>
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginLeft: '5px' }}>
+                    active
+                  </span>
                 </td>
                 <td>
-                  <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+                  <span className="mono" style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
                     {formatDate(entity.created_at)}
                   </span>
                 </td>
                 <td style={{ textAlign: 'right' }}>
                   <div style={{ display: 'inline-flex', gap: '6px' }}>
                     <button
-                      className="btn btn-secondary btn-sm"
+                      type="button"
+                      className="btn btn-secondary btn-xs"
                       onClick={(e) => {
                         e.stopPropagation();
                         onSelectEntity(entity.id);
                       }}
-                      title="View Profile"
                     >
-                      <span>Intel</span>
-                      <ExternalLink size={13} />
+                      <span>Open Ledger</span>
+                      <ArrowUpRight size={12} />
                     </button>
                     <button
-                      className="btn btn-ghost btn-sm"
+                      type="button"
+                      className="btn btn-ghost btn-xs"
                       style={{ color: 'var(--danger)' }}
-                      onClick={(e) => handleDeleteEntity(entity.id, e)}
-                      title="Delete Entity"
+                      onClick={(e) => handleDeleteEntity(entity, e)}
+                      title="Delete Profile"
                     >
-                      <Trash2 size={14} />
+                      <Trash2 size={13} />
                     </button>
                   </div>
                 </td>
@@ -268,15 +263,15 @@ export const EntitiesPage: React.FC<EntitiesPageProps> = ({
         {filteredEntities.length === 0 && !isLoading && (
           <div className="empty-state">
             <Users className="empty-state-icon" />
-            <h4 className="empty-state-title">No Entities Found</h4>
+            <h4 className="empty-state-title">No Profiles Found</h4>
             <p className="empty-state-text">
               {search
-                ? `No entities matching "${search}".`
-                : 'Start tracking people, organizations, or products to build intelligence profiles.'}
+                ? `No profiles matching "${search}".`
+                : 'Create your first profile or ingest a record to start tracking entity state.'}
             </p>
-            <button className="btn btn-primary" onClick={onOpenNewEntity}>
-              <UserPlus size={16} />
-              <span>Track First Entity</span>
+            <button className="btn btn-primary btn-sm" onClick={onOpenNewEntity}>
+              <UserPlus size={14} />
+              <span>Create First Profile</span>
             </button>
           </div>
         )}

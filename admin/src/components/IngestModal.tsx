@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Sparkles, Check, ArrowRight, Loader2 } from 'lucide-react';
+import { X, Check, ArrowRight, FilePlus2, ShieldCheck } from 'lucide-react';
 import type { Entity, IngestResponse } from '../types';
 import { api } from '../api';
 
@@ -56,7 +56,7 @@ export const IngestModal: React.FC<IngestModalProps> = ({
       const data = await api.listEntities('', 100);
       setEntities(data);
     } catch {
-      // Ignore entity load error
+      // Ignore
     }
   };
 
@@ -76,7 +76,7 @@ export const IngestModal: React.FC<IngestModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!content.trim()) {
-      setError('Text content is required');
+      setError('Source text is required');
       return;
     }
 
@@ -85,7 +85,7 @@ export const IngestModal: React.FC<IngestModalProps> = ({
       setError(null);
 
       const finalSourceType = isCustomSourceType
-        ? (customSourceTypeInput.trim() || 'custom')
+        ? customSourceTypeInput.trim() || 'custom'
         : sourceType;
 
       const payload: any = {
@@ -98,7 +98,7 @@ export const IngestModal: React.FC<IngestModalProps> = ({
         payload.entity_id = Number(selectedEntityId);
       } else {
         if (!externalId.trim()) {
-          setError('Please select an existing entity or provide an External ID');
+          setError('Select an existing profile or provide an External ID');
           setIsSubmitting(false);
           return;
         }
@@ -130,28 +130,38 @@ export const IngestModal: React.FC<IngestModalProps> = ({
     <div className="modal-overlay" onClick={onClose}>
       <div
         className="modal"
-        style={{ maxWidth: result ? '680px' : '580px' }}
+        style={{ maxWidth: result ? '640px' : '560px' }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-          <h3 className="modal-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <Sparkles size={20} color="var(--accent-primary)" />
-            {result ? 'Extraction Completed' : 'Ingest Unstructured Knowledge'}
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '18px',
+            paddingBottom: '12px',
+            borderBottom: '1px solid var(--border-subtle)',
+          }}
+        >
+          <h3 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <FilePlus2 size={18} />
+            <span>{result ? 'Extraction Summary' : 'Ingest Source Record'}</span>
           </h3>
           <button className="btn btn-ghost btn-sm" onClick={onClose}>
-            <X size={18} />
+            <X size={16} />
           </button>
         </div>
 
         {error && (
           <div
             style={{
-              padding: '10px 14px',
+              padding: '10px 12px',
               background: 'var(--danger-bg)',
               color: 'var(--danger)',
+              border: '1px solid var(--danger-border)',
               borderRadius: 'var(--radius-sm)',
-              marginBottom: '16px',
-              fontSize: '13px',
+              marginBottom: '14px',
+              fontSize: '12.5px',
             }}
           >
             {error}
@@ -164,90 +174,83 @@ export const IngestModal: React.FC<IngestModalProps> = ({
               style={{
                 display: 'flex',
                 gap: '12px',
-                marginBottom: '20px',
-                padding: '16px',
-                background: 'rgba(52, 211, 153, 0.1)',
-                border: '1px solid rgba(52, 211, 153, 0.25)',
+                marginBottom: '16px',
+                padding: '12px 14px',
+                background: 'var(--success-bg)',
+                border: '1px solid var(--success-border)',
                 borderRadius: 'var(--radius-sm)',
+                alignItems: 'center',
               }}
             >
-              <div
-                style={{
-                  width: '32px',
-                  height: '32px',
-                  borderRadius: '50%',
-                  background: 'var(--success)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#fff',
-                  flexShrink: 0,
-                }}
-              >
-                <Check size={18} />
-              </div>
+              <Check size={18} color="var(--success)" />
               <div>
-                <div style={{ fontWeight: 600, color: 'var(--success)', marginBottom: '4px' }}>
-                  Successfully Extracted {result.memories_extracted} Fact{result.memories_extracted === 1 ? '' : 's'}
+                <div style={{ fontWeight: 600, fontSize: '13.5px', color: 'var(--success)' }}>
+                  Extracted {result.memories_extracted} Claim{result.memories_extracted === 1 ? '' : 's'}
                 </div>
-                <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-                  {result.memories_new} new memor{result.memories_new === 1 ? 'y' : 'ies'} created,{' '}
-                  {result.memories_updated} existing memor{result.memories_updated === 1 ? 'y' : 'ies'} updated / confirmed.
+                <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                  {result.memories_new} new state record{result.memories_new === 1 ? '' : 's'} ·{' '}
+                  {result.memories_updated} existing record{result.memories_updated === 1 ? '' : 's'} corroborated or superseded.
                 </div>
               </div>
-            </div>
-
-            <div style={{ marginBottom: '16px', fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)' }}>
-              Extracted Claims:
             </div>
 
             <div
               style={{
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '10px',
-                maxHeight: '280px',
+                gap: '8px',
+                maxHeight: '300px',
                 overflowY: 'auto',
-                marginBottom: '24px',
+                marginBottom: '20px',
               }}
             >
-              {result.memories.map((m) => (
-                <div
-                  key={m.id}
-                  style={{
-                    padding: '12px 14px',
-                    background: 'var(--bg-secondary)',
-                    borderRadius: 'var(--radius-sm)',
-                    border: '1px solid var(--border-subtle)',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
-                    <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text-primary)' }}>
+              {result.memories.map((m) => {
+                const ev = m.evidence && m.evidence[0];
+                return (
+                  <div
+                    key={m.id}
+                    style={{
+                      padding: '11px 14px',
+                      background: 'var(--bg-well)',
+                      borderRadius: 'var(--radius-sm)',
+                      border: '1px solid var(--border-subtle)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                        {m.topic_name ? (
+                          <span className="tag-pill">#{m.topic_name}</span>
+                        ) : (
+                          <span className="badge badge-neutral">open_discovery</span>
+                        )}
+                        {m.value && <span className="value-pill">= {m.value}</span>}
+                      </div>
+                      <span className={`badge ${m.status === 'pending_review' ? 'badge-warning' : 'badge-success'}`}>
+                        {m.status}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text-primary)' }}>
                       {m.claim}
-                    </span>
-                    <span className="badge badge-success" style={{ fontSize: '11px', flexShrink: 0 }}>
-                      {Math.round(m.confidence * 100)}% conf
-                    </span>
+                    </div>
+                    {ev && (
+                      <div style={{ marginTop: '6px', fontSize: '11.5px', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
+                        <span className="mono">&ldquo;{ev.excerpt}&rdquo;</span>
+                        {ev.is_verified && (
+                          <span style={{ color: 'var(--success)', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                            <ShieldCheck size={11} />
+                            [{ev.char_start}:{ev.char_end}]
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  {m.topic_name && (
-                    <span
-                      style={{
-                        fontSize: '11px',
-                        color: 'var(--accent-primary-hover)',
-                        marginTop: '6px',
-                        display: 'inline-block',
-                      }}
-                    >
-                      #{m.topic_name}
-                    </span>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             <div className="modal-actions">
               <button type="button" className="btn btn-secondary" onClick={handleReset}>
-                Ingest More Text
+                Ingest Another Record
               </button>
               <button type="button" className="btn btn-primary" onClick={onClose}>
                 Done
@@ -257,13 +260,13 @@ export const IngestModal: React.FC<IngestModalProps> = ({
         ) : (
           <form onSubmit={handleSubmit}>
             <div className="input-group">
-              <label className="input-label">Target Entity</label>
+              <label className="input-label">Target Profile / Entity</label>
               {presetEntityId ? (
                 <input
                   type="text"
                   className="input"
                   disabled
-                  value={`Entity #${presetEntityId}`}
+                  value={`Profile #${presetEntityId}`}
                 />
               ) : (
                 <select
@@ -271,10 +274,10 @@ export const IngestModal: React.FC<IngestModalProps> = ({
                   value={selectedEntityId}
                   onChange={(e) => setSelectedEntityId(e.target.value)}
                 >
-                  <option value="">-- Create new or enter external ID below --</option>
+                  <option value="">— Create new or enter External ID below —</option>
                   {entities.map((ent) => (
                     <option key={ent.id} value={ent.id}>
-                      {ent.name} ({ent.external_id}) &bull; {ent.entity_type}
+                      {ent.name} ({ent.external_id}) · {ent.entity_type}
                     </option>
                   ))}
                 </select>
@@ -287,18 +290,18 @@ export const IngestModal: React.FC<IngestModalProps> = ({
                   <label className="input-label">External ID *</label>
                   <input
                     type="text"
-                    className="input"
-                    placeholder="e.g. user_101"
+                    className="input mono"
+                    placeholder="e.g. patient_104, cust_201"
                     value={externalId}
                     onChange={(e) => setExternalId(e.target.value)}
                   />
                 </div>
                 <div className="input-group">
-                  <label className="input-label">Entity Name</label>
+                  <label className="input-label">Display Name</label>
                   <input
                     type="text"
                     className="input"
-                    placeholder="e.g. Sarah Connor"
+                    placeholder="e.g. Clara Vance"
                     value={entityName}
                     onChange={(e) => setEntityName(e.target.value)}
                   />
@@ -308,7 +311,7 @@ export const IngestModal: React.FC<IngestModalProps> = ({
 
             <div className="grid-2">
               <div className="input-group">
-                <label className="input-label">Source Type</label>
+                <label className="input-label">Provenance Source Type</label>
                 <select
                   className="input"
                   value={isCustomSourceType ? '__custom__' : sourceType}
@@ -326,14 +329,14 @@ export const IngestModal: React.FC<IngestModalProps> = ({
                       {st.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}
                     </option>
                   ))}
-                  <option value="__custom__">+ Define New Category...</option>
+                  <option value="__custom__">+ New Source Category…</option>
                 </select>
                 {isCustomSourceType && (
                   <input
                     type="text"
-                    className="input"
+                    className="input mono"
                     style={{ marginTop: '6px' }}
-                    placeholder="e.g. reflection, sprint_retro, feedback"
+                    placeholder="e.g. clinical_intake, consultation"
                     value={customSourceTypeInput}
                     onChange={(e) => setCustomSourceTypeInput(e.target.value)}
                     autoFocus
@@ -342,11 +345,11 @@ export const IngestModal: React.FC<IngestModalProps> = ({
               </div>
 
               <div className="input-group">
-                <label className="input-label">Source Description (Optional)</label>
+                <label className="input-label">Reference Note (Optional)</label>
                 <input
                   type="text"
                   className="input"
-                  placeholder="e.g. Onboarding call with sales rep"
+                  placeholder="e.g. Initial intake note, Q4 review call"
                   value={sourceDescription}
                   onChange={(e) => setSourceDescription(e.target.value)}
                 />
@@ -354,11 +357,11 @@ export const IngestModal: React.FC<IngestModalProps> = ({
             </div>
 
             <div className="input-group">
-              <label className="input-label">Unstructured Text / Conversation Content *</label>
+              <label className="input-label">Source Text / Transcript *</label>
               <textarea
                 className="input"
                 style={{ minHeight: '130px', fontSize: '13px' }}
-                placeholder="Paste any dialogue, email body, support notes, or customer comments here... The engine will automatically extract atomic facts, resolve conflicts, and track confidence scores."
+                placeholder="Paste any consultation note, conversation transcript, intake form, or support ticket..."
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
                 required
@@ -373,17 +376,15 @@ export const IngestModal: React.FC<IngestModalProps> = ({
                 type="submit"
                 className="btn btn-primary"
                 disabled={isSubmitting || !content.trim()}
-                style={{ minWidth: '150px', justifyContent: 'center' }}
               >
                 {isSubmitting ? (
                   <>
-                    <Loader2 size={16} className="spinner" />
-                    <span>Analyzing with LLM...</span>
+                    <div className="spinner" style={{ borderTopColor: '#fff' }} />
+                    <span>Extracting &amp; Verifying…</span>
                   </>
                 ) : (
                   <>
-                    <Sparkles size={16} />
-                    <span>Extract Memories</span>
+                    <span>Extract &amp; Resolve State</span>
                     <ArrowRight size={14} />
                   </>
                 )}

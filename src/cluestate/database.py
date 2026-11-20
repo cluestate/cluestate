@@ -56,22 +56,33 @@ async def get_session():
 
 async def ensure_default_workspace(session: AsyncSession):
     """Ensure workspace id=1 exists for single-tenant or initial setup."""
-    from .models import Workspace
+    from .models import DEFAULT_EXTRACTION_POLICY, DEFAULT_SOURCE_TYPES, Workspace
 
     result = await session.execute(select(Workspace).order_by(Workspace.id).limit(1))
     workspace = result.scalars().first()
     if not workspace:
-        from .models import DEFAULT_SOURCE_TYPES
-        workspace = Workspace(id=1, name="Default Workspace", slug="default", source_types=list(DEFAULT_SOURCE_TYPES))
+        workspace = Workspace(
+            id=1,
+            name="Default Workspace",
+            slug="default",
+            source_types=list(DEFAULT_SOURCE_TYPES),
+            extraction_policy=dict(DEFAULT_EXTRACTION_POLICY),
+        )
         session.add(workspace)
         await session.commit()
         await session.refresh(workspace)
-    elif not workspace.source_types:
-        from .models import DEFAULT_SOURCE_TYPES
-        workspace.source_types = list(DEFAULT_SOURCE_TYPES)
-        session.add(workspace)
-        await session.commit()
-        await session.refresh(workspace)
+    else:
+        changed = False
+        if not workspace.source_types:
+            workspace.source_types = list(DEFAULT_SOURCE_TYPES)
+            changed = True
+        if not getattr(workspace, "extraction_policy", None):
+            workspace.extraction_policy = dict(DEFAULT_EXTRACTION_POLICY)
+            changed = True
+        if changed:
+            session.add(workspace)
+            await session.commit()
+            await session.refresh(workspace)
     return workspace
 
 

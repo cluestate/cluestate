@@ -176,15 +176,34 @@ class TopicsResource:
         update_policy: Union[UpdatePolicy, str] = UpdatePolicy.APPEND,
         temporal: bool = False,
         enum_values: Optional[list[str]] = None,
+        *,
+        label: str = "",
+        extraction_instructions: str = "",
+        examples: Optional[list[Any]] = None,
+        ttl_days: Optional[int] = None,
+        allow_custom_values: bool = False,
+        allow_inferred: bool = True,
+        min_confidence: float = 0.0,
+        constraints: Optional[dict[str, Any]] = None,
+        applies_to_entity_types: Optional[list[str]] = None,
     ) -> TopicRead:
-        payload = {
+        payload: dict[str, Any] = {
             "name": name,
+            "label": label,
             "description": description,
+            "extraction_instructions": extraction_instructions,
+            "examples": examples or [],
             "data_type": data_type,
             "cardinality": cardinality.value if isinstance(cardinality, TopicCardinality) else cardinality,
             "update_policy": update_policy.value if isinstance(update_policy, UpdatePolicy) else update_policy,
             "temporal": temporal,
+            "ttl_days": ttl_days,
             "enum_values": enum_values or [],
+            "allow_custom_values": allow_custom_values,
+            "allow_inferred": allow_inferred,
+            "min_confidence": min_confidence,
+            "constraints": constraints or {},
+            "applies_to_entity_types": applies_to_entity_types or [],
         }
         data = self._client._request("POST", "/topics", json=payload)
         return TopicRead.model_validate(data)
@@ -460,15 +479,34 @@ class AsyncTopicsResource:
         update_policy: Union[UpdatePolicy, str] = UpdatePolicy.APPEND,
         temporal: bool = False,
         enum_values: Optional[list[str]] = None,
+        *,
+        label: str = "",
+        extraction_instructions: str = "",
+        examples: Optional[list[Any]] = None,
+        ttl_days: Optional[int] = None,
+        allow_custom_values: bool = False,
+        allow_inferred: bool = True,
+        min_confidence: float = 0.0,
+        constraints: Optional[dict[str, Any]] = None,
+        applies_to_entity_types: Optional[list[str]] = None,
     ) -> TopicRead:
-        payload = {
+        payload: dict[str, Any] = {
             "name": name,
+            "label": label,
             "description": description,
+            "extraction_instructions": extraction_instructions,
+            "examples": examples or [],
             "data_type": data_type,
             "cardinality": cardinality.value if isinstance(cardinality, TopicCardinality) else cardinality,
             "update_policy": update_policy.value if isinstance(update_policy, UpdatePolicy) else update_policy,
             "temporal": temporal,
+            "ttl_days": ttl_days,
             "enum_values": enum_values or [],
+            "allow_custom_values": allow_custom_values,
+            "allow_inferred": allow_inferred,
+            "min_confidence": min_confidence,
+            "constraints": constraints or {},
+            "applies_to_entity_types": applies_to_entity_types or [],
         }
         data = await self._client._request("POST", "/topics", json=payload)
         return TopicRead.model_validate(data)

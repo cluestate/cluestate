@@ -95,12 +95,21 @@ class Entity(BaseModel):
 class Topic(BaseModel):
     id: int
     name: str
+    label: str = ""
     description: str
+    extraction_instructions: str = ""
+    examples: list[Any] = Field(default_factory=list)
     data_type: str
     cardinality: str = "multiple"
     update_policy: str = "append"
     temporal: bool = False
+    ttl_days: Optional[int] = None
     enum_values: list[str] = Field(default_factory=list)
+    allow_custom_values: bool = False
+    allow_inferred: bool = True
+    min_confidence: float = 0.0
+    constraints: dict[str, Any] = Field(default_factory=dict)
+    applies_to_entity_types: list[str] = Field(default_factory=list)
     schema_version: int = 1
     is_active: bool = True
     created_at: datetime
@@ -126,6 +135,8 @@ class IngestResponse(BaseModel):
     memories_updated: int
     memories_new: int
     idempotent_replay: bool = False
+    dry_run: bool = False
+    state: dict[str, Any] = Field(default_factory=dict)
     memories: list[Memory] = Field(default_factory=list)
 
 
@@ -134,6 +145,7 @@ class IntelResponse(BaseModel):
     entity_name: str
     entity_type: str
     formatted_prompt: str
+    state: dict[str, Any] = Field(default_factory=dict)
     memories: list[Memory] = Field(default_factory=list)
     total_memories: int = 0
     total_episodes: int = 0

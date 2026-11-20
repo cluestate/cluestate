@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..database import get_session
 from ..engine import (
     ExtractionError,
+    compile_entity_state,
     compute_content_hash,
     extract_memories_from_text,
     process_extracted_claims,
@@ -45,12 +46,13 @@ async def ingest(
     The engine will:
     1. Check idempotency key to prevent duplicate ingestion on retries
     2. Record the interaction as an Episode with source timestamp and content hash
-    3. Extract atomic claims via the configured LLM
-    4. Verify evidence excerpts against source text and validate topic types
+    3. Extract atomic claims via the configured LLM guided by workspace Memory Tags & Discovery Policy
+    4. Verify evidence excerpts against source text and validate topic types/constraints
     5. Apply topic cardinality and update policies (add, support, supersede)
+    6. If `dry_run=True`, rollback transaction after simulating state resolution
     """
-    # ── 1. Idempotency Check ──
-    if body.idempotency_key:
+    # ── 1. Idempotency Check (skip if dry_run) ──
+    if body.idempotency_key and not body.dry_run:
         existing_ep_res = await session.execute(
             select(Episode).where(
                 Episode.workspace_id == workspace.id,
@@ -72,11 +74,23 @@ async def ingest(
             t_res = await session.execute(
                 select(Topic).where(Topic.workspace_id == workspace.id)
             )
-            topic_map = {t.id: t.name for t in t_res.scalars().all()}
+            topics_all = list(t_res.scalars().all())
+            topic_map = {t.id: t.name for t in topics_all if t.id is not None}
+            topics_by_id = {t.id: t for t in topics_all if t.id is not None}
 
             mem_reads = []
             for m in memories:
-                m_ev = [EvidenceRead(**e.model_dump()) for e in ev_list if e.memory_id == m.id]
+                m_ev = [
+                    EvidenceRead(
+                        **e.model_dump(),
+                        episode_content=existing_ep.content,
+                        episode_source_type=existing_ep.source_type,
+                        episode_description=existing_ep.source_description,
+                        episode_occurred_at=existing_ep.occurred_at,
+                    )
+                    for e in ev_list
+                    if e.memory_id == m.id
+                ]
                 mem_reads.append(
                     MemoryRead(
                         **m.model_dump(),
@@ -92,6 +106,8 @@ async def ingest(
                 memories_updated=0,
                 memories_new=0,
                 idempotent_replay=True,
+                dry_run=False,
+                state=compile_entity_state(memories, topics_by_id),
                 memories=mem_reads,
             )
 
@@ -131,7 +147,8 @@ async def ingest(
         raise HTTPException(status_code=404, detail="Entity not found and auto_create_entity is disabled")
 
     # ── 3. Create Episode with Auto-Registered Source Type ──
-    await ensure_workspace_source_type(workspace, body.source_type, session)
+    if not body.dry_run:
+        await ensure_workspace_source_type(workspace, body.source_type, session)
 
     now = datetime.now(timezone.utc)
     content_hash = compute_content_hash(body.content)
@@ -140,7 +157,7 @@ async def ingest(
         entity_id=entity.id,
         source_type=body.source_type,
         source_record_id=body.source_record_id,
-        idempotency_key=body.idempotency_key,
+        idempotency_key=None if body.dry_run else body.idempotency_key,
         content=body.content,
         content_hash=content_hash,
         source_description=body.source_description,
@@ -169,10 +186,11 @@ async def ingest(
         )
     )
     topics = list(result.scalars().all())
+    entity_type_str = entity.entity_type.value if hasattr(entity.entity_type, "value") else str(entity.entity_type)
 
     # ── 5. Extract Claims via LLM ──
     logger.info(
-        f"Extracting state for entity '{entity.name}' (id={entity.id}, workspace={workspace.id}) "
+        f"Extracting state for entity '{entity.name}' (id={entity.id}, workspace={workspace.id}, dry_run={body.dry_run}) "
         f"from {len(body.content)} chars"
     )
 
@@ -182,6 +200,8 @@ async def ingest(
             entity_name=entity.name or entity.external_id,
             existing_memories=existing_memories,
             topics=topics,
+            entity_type=entity_type_str,
+            extraction_policy=workspace.extraction_policy,
         )
     except ExtractionError as exc:
         await session.rollback()
@@ -196,32 +216,66 @@ async def ingest(
         episode=episode,
         extraction=extraction,
         topics=topics,
+        extraction_policy=workspace.extraction_policy,
     )
 
-    await session.commit()
+    # ── 7. Build Response with Batched Verified Evidence & Compiled State ──
+    topic_map = {t.id: t.name for t in topics if t.id is not None}
+    topics_by_id = {t.id: t for t in topics if t.id is not None}
 
-    # ── 7. Build Response with Verified Evidence ──
-    topic_map = {t.id: t.name for t in topics}
-    memory_reads = []
-    for m in all_memories:
-        ev_res = await session.execute(
-            select(Evidence).where(Evidence.memory_id == m.id)
-        )
-        evidence_items = [EvidenceRead(**ev.model_dump()) for ev in ev_res.scalars().all()]
-        memory_reads.append(
-            MemoryRead(
-                **m.model_dump(),
-                topic_name=topic_map.get(m.topic_id) if m.topic_id else None,
-                evidence=evidence_items,
+    mem_ids = [m.id for m in all_memories if m.id is not None]
+    ev_by_mem: dict[int, list[EvidenceRead]] = {}
+    if mem_ids:
+        ev_res = await session.execute(select(Evidence).where(Evidence.memory_id.in_(mem_ids)))
+        for ev in ev_res.scalars().all():
+            ev_by_mem.setdefault(ev.memory_id, []).append(
+                EvidenceRead(
+                    **ev.model_dump(),
+                    episode_content=episode.content if ev.episode_id == episode.id else None,
+                    episode_source_type=episode.source_type if ev.episode_id == episode.id else None,
+                    episode_description=episode.source_description if ev.episode_id == episode.id else None,
+                    episode_occurred_at=episode.occurred_at if ev.episode_id == episode.id else None,
+                )
             )
+
+    memory_reads = [
+        MemoryRead(
+            **m.model_dump(),
+            entity_name=entity.name,
+            entity_external_id=entity.external_id,
+            topic_name=topic_map.get(m.topic_id) if m.topic_id else None,
+            evidence=ev_by_mem.get(m.id, []) if m.id is not None else [],
         )
+        for m in all_memories
+    ]
+
+    # Compile full entity state post-extraction
+    active_res = await session.execute(
+        select(Memory)
+        .where(
+            Memory.entity_id == entity.id,
+            Memory.status.in_([MemoryStatus.ACTIVE, MemoryStatus.CONFIRMED]),
+        )
+        .order_by(Memory.confidence.desc())
+    )
+    compiled_state = compile_entity_state(list(active_res.scalars().all()), topics_by_id)
+
+    ep_id = episode.id or 0
+    ent_id = entity.id or 0
+
+    if body.dry_run:
+        await session.rollback()
+    else:
+        await session.commit()
 
     return IngestResponse(
-        episode_id=episode.id,
-        entity_id=entity.id,
+        episode_id=ep_id,
+        entity_id=ent_id,
         memories_extracted=len(all_memories),
         memories_updated=updated_count,
         memories_new=new_count,
         idempotent_replay=False,
+        dry_run=body.dry_run,
+        state=compiled_state,
         memories=memory_reads,
     )

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, UserPlus, Sparkles } from 'lucide-react';
+import { X, UserPlus } from 'lucide-react';
 import type { EntityType } from '../types';
 
 interface EntityModalProps {
@@ -46,7 +46,7 @@ export const EntityModal: React.FC<EntityModalProps> = ({
       setEntityType('person');
       onClose();
     } catch (err: any) {
-      setError(err.message || 'Failed to create entity');
+      setError(err.message || 'Failed to create profile');
     } finally {
       setIsSubmitting(false);
     }
@@ -64,26 +64,36 @@ export const EntityModal: React.FC<EntityModalProps> = ({
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-          <h3 className="modal-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <UserPlus size={20} color="var(--accent-primary)" />
-            Track New Entity
+      <div className="modal" style={{ maxWidth: '480px' }} onClick={(e) => e.stopPropagation()}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '18px',
+            paddingBottom: '12px',
+            borderBottom: '1px solid var(--border-subtle)',
+          }}
+        >
+          <h3 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <UserPlus size={18} />
+            <span>Create Profile / Entity</span>
           </h3>
           <button className="btn btn-ghost btn-sm" onClick={onClose}>
-            <X size={18} />
+            <X size={16} />
           </button>
         </div>
 
         {error && (
           <div
             style={{
-              padding: '10px 14px',
+              padding: '10px 12px',
               background: 'var(--danger-bg)',
               color: 'var(--danger)',
+              border: '1px solid var(--danger-border)',
               borderRadius: 'var(--radius-sm)',
-              marginBottom: '16px',
-              fontSize: '13px',
+              marginBottom: '14px',
+              fontSize: '12.5px',
             }}
           >
             {error}
@@ -92,58 +102,58 @@ export const EntityModal: React.FC<EntityModalProps> = ({
 
         <form onSubmit={handleSubmit}>
           <div className="input-group">
-            <label className="input-label">Entity Name</label>
+            <label className="input-label">Display Name</label>
             <input
               type="text"
               className="input"
-              placeholder="e.g. Alice Chen, Acme Corp, MacBook Pro"
+              placeholder="e.g. Dr. Elena Rostova, Patient #402, Acme Corp"
               value={name}
               onChange={(e) => setName(e.target.value)}
               onBlur={() => !externalId && generateExternalId()}
+              autoFocus
             />
           </div>
 
           <div className="input-group">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
               <label className="input-label" style={{ margin: 0 }}>
-                External ID (Unique Key) *
+                External Identifier (Unique Key) *
               </label>
               {name && (
                 <button
                   type="button"
-                  className="btn btn-ghost btn-sm"
-                  style={{ padding: '2px 6px', fontSize: '11px', height: 'auto' }}
+                  className="btn btn-ghost btn-xs"
                   onClick={generateExternalId}
                 >
-                  <Sparkles size={11} /> Auto-generate
+                  Generate key
                 </button>
               )}
             </div>
             <input
               type="text"
-              className="input"
-              placeholder="e.g. user_9824, org_acme, patient_540"
+              className="input mono"
+              placeholder="e.g. patient_8841, cust_402, org_acme"
               value={externalId}
               onChange={(e) => setExternalId(e.target.value)}
               required
             />
-            <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
-              Matches your application's user ID, customer ID, or account ID.
+            <span className="input-hint">
+              Matches the primary user, patient, or account ID in your EHR, CRM, or database.
             </span>
           </div>
 
           <div className="input-group">
-            <label className="input-label">Entity Type</label>
+            <label className="input-label">Profile Classification</label>
             <select
               className="input"
               value={entityType}
               onChange={(e) => setEntityType(e.target.value as EntityType)}
             >
-              <option value="person">Person (User, Customer, Patient, Guest)</option>
-              <option value="organization">Organization (Company, Team, Vendor)</option>
-              <option value="product">Product (Service, Hardware, Software)</option>
-              <option value="location">Location (Venue, Hotel, Branch)</option>
-              <option value="custom">Custom Entity</option>
+              <option value="person">Person (Patient, Client, User, Guest)</option>
+              <option value="organization">Organization (Clinic, Company, Account)</option>
+              <option value="product">Product (Service, Treatment, Software)</option>
+              <option value="location">Location (Facility, Branch, Venue)</option>
+              <option value="custom">Custom Record</option>
             </select>
           </div>
 
@@ -152,7 +162,7 @@ export const EntityModal: React.FC<EntityModalProps> = ({
               Cancel
             </button>
             <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-              {isSubmitting ? 'Creating...' : 'Start Tracking'}
+              {isSubmitting ? 'Creating...' : 'Create Profile'}
             </button>
           </div>
         </form>

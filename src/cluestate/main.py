@@ -77,8 +77,10 @@ def create_app() -> FastAPI:
     from .api.source_types import router as source_types_router
     from .api.stats import router as stats_router
     from .api.topics import router as topics_router
+    from .api.workspaces import router as workspaces_router
 
     app.include_router(auth_router, prefix="/api")
+    app.include_router(workspaces_router, prefix="/api")
     app.include_router(entities_router, prefix="/api")
     app.include_router(topics_router, prefix="/api")
     app.include_router(ingest_router, prefix="/api")

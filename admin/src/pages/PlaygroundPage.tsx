@@ -1,47 +1,45 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Sparkles,
-  Loader2,
-  Brain,
-  ExternalLink,
-  Bot,
-  Zap,
+  FlaskConical,
+  ArrowUpRight,
+  ShieldCheck,
+  AlertTriangle,
+  Play,
+  Tag,
 } from 'lucide-react';
 import type { Entity, IngestResponse, SourceType } from '../types';
 import { api } from '../api';
-import { ConfidenceBar } from '../components/ConfidenceBar';
+import { useToast } from '../components/Toast';
 
-const PLAYGROUND_PRESETS = [
+const BENCH_PRESETS = [
   {
-    title: 'SaaS Sales Discovery',
-    entityName: 'Sarah Jenkins',
-    externalId: 'contact_sarah_j',
-    sourceType: 'conversation' as SourceType,
-    sourceDesc: 'Introductory Discovery Call',
-    content: `Sales Rep: Hi Sarah, great connecting today! Can you tell me a bit about your current data pipeline?
-Sarah: Sure! Right now our team is heavily reliant on Snowflake and dbt, but we're experiencing major latency issues during peak hours. Our primary stack is Python and FastAPI on AWS ECS.
-Sales Rep: Got it. What is your timeline for upgrading?
-Sarah: We have a hard deadline to migrate by end of Q4 before our renewal. Our total tooling budget for this project is around $60,000 annually.
-Sales Rep: Who else will be involved in the technical sign-off?
-Sarah: Myself and our VP of Engineering, David Vance.`,
+    title: 'Clinical Patient Intake',
+    entityName: 'Clara Lindqvist',
+    externalId: 'patient_clara_409',
+    sourceType: 'note' as SourceType,
+    sourceDesc: 'Initial Preventive Medicine Consultation',
+    content: `Physician Intake Note:
+Patient Clara Lindqvist (34F) presents for annual preventive evaluation. She states she has followed a strictly vegan diet for the past 5 years (no meat, dairy, or eggs) and is gluten-free due to celiac history. Documented drug allergy to Penicillin (hives) and food allergy to tree nuts. She requests all lab results and appointment reminders via SMS rather than phone calls.`,
   },
   {
-    title: 'Customer Support Escalation',
+    title: 'Enterprise SaaS Discovery',
+    entityName: 'Sarah Jenkins',
+    externalId: 'account_sarah_j',
+    sourceType: 'conversation' as SourceType,
+    sourceDesc: 'Architecture & Budget Review',
+    content: `Account Executive: Hi Sarah, can you walk us through your current database architecture and timeline?
+Sarah: Right now we run PostgreSQL and Redis on AWS ECS with Python and FastAPI. We are hitting latency bottlenecks at peak load and have a hard deadline to finalize our new data tier before our renewal on 2026-12-15.
+Account Executive: What is the approved budget envelope?
+Sarah: Our VP of Engineering, David Vance, signed off on an annual software budget of $60,000.`,
+  },
+  {
+    title: 'Priority Support Escalation',
     entityName: 'Liam Miller',
     externalId: 'cust_liam_882',
     sourceType: 'support_ticket' as SourceType,
-    sourceDesc: 'Priority Support Ticket #4419',
+    sourceDesc: 'Ticket #4419 — Mobile Access',
     content: `Customer Ticket:
-"I am frustrated with the latest mobile release. The biometric face login fails every time on my iPhone 15 Pro Max running iOS 18. I travel weekly for consulting and need offline mode access. Please make sure notifications are sent strictly via SMS since I rarely check email while on flights."`,
-  },
-  {
-    title: 'Hospitality & VIP Guest Profile',
-    entityName: 'Elena Rostova',
-    externalId: 'guest_elena_r',
-    sourceType: 'review' as SourceType,
-    sourceDesc: 'Concierge Booking Notes & Preferences',
-    content: `Concierge Notes:
-Guest Elena Rostova requested a high-floor corner suite away from elevator shafts for her upcoming anniversary stay on November 15th. Severe peanut and tree nut allergy — kitchen must be notified. She prefers oat milk for morning espresso and asked for extra hypoallergenic down-free pillows.`,
+"The biometric login fails on my iPhone 15 Pro Max running iOS 18. I travel weekly for consulting and require offline mode access. Please send status updates strictly via SMS since I rarely check email on flights."`,
   },
 ];
 
@@ -52,33 +50,36 @@ interface PlaygroundPageProps {
 export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
   onSelectEntity,
 }) => {
+  const { notify } = useToast();
   const [entities, setEntities] = useState<Entity[]>([]);
   const [selectedEntityId, setSelectedEntityId] = useState<string>('');
-  const [externalId, setExternalId] = useState('demo_customer_01');
-  const [entityName, setEntityName] = useState('Demo Customer');
-  const [sourceType, setSourceType] = useState<string>('conversation');
+  const [externalId, setExternalId] = useState(BENCH_PRESETS[0].externalId);
+  const [entityName, setEntityName] = useState(BENCH_PRESETS[0].entityName);
+  const [sourceType, setSourceType] = useState<string>(BENCH_PRESETS[0].sourceType);
   const [availableSourceTypes, setAvailableSourceTypes] = useState<string[]>([
     'conversation',
     'note',
     'interaction',
     'custom',
   ]);
-  const [isCustomSourceType, setIsCustomSourceType] = useState(false);
-  const [customSourceTypeInput, setCustomSourceTypeInput] = useState('');
-  const [sourceDescription, setSourceDescription] = useState('Interactive Lab Test');
-  const [content, setContent] = useState(PLAYGROUND_PRESETS[0].content);
+  const [sourceDescription, setSourceDescription] = useState(BENCH_PRESETS[0].sourceDesc);
+  const [content, setContent] = useState(BENCH_PRESETS[0].content);
+  const [dryRun, setDryRun] = useState<boolean>(true);
 
   const [isExtracting, setIsExtracting] = useState(false);
   const [result, setResult] = useState<IngestResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [activeClaimIdx, setActiveClaimIdx] = useState<number | null>(null);
 
   useEffect(() => {
     loadEntities();
-    api.getSourceTypes().then(r => {
-      if (r && r.source_types && r.source_types.length > 0) {
-        setAvailableSourceTypes(r.source_types);
-      }
-    }).catch(() => {});
+    api
+      .getSourceTypes()
+      .then((r) => {
+        if (r && r.source_types && r.source_types.length > 0) {
+          setAvailableSourceTypes(r.source_types);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const loadEntities = async () => {
@@ -90,7 +91,7 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
     }
   };
 
-  const applyPreset = (preset: typeof PLAYGROUND_PRESETS[0]) => {
+  const applyPreset = (preset: (typeof BENCH_PRESETS)[0]) => {
     setSelectedEntityId('');
     setEntityName(preset.entityName);
     setExternalId(preset.externalId);
@@ -98,67 +99,124 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
     setSourceDescription(preset.sourceDesc);
     setContent(preset.content);
     setResult(null);
-    setError(null);
+    setActiveClaimIdx(null);
   };
 
   const handleRunExtraction = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!content.trim()) {
-      setError('Content is required');
+      notify('Source text is required', 'error');
       return;
     }
 
     try {
       setIsExtracting(true);
-      setError(null);
-
-      const finalSourceType = isCustomSourceType
-        ? (customSourceTypeInput.trim() || 'custom')
-        : sourceType;
-
       const payload: any = {
         content: content.trim(),
-        source_type: finalSourceType,
+        source_type: sourceType,
         source_description: sourceDescription.trim() || undefined,
+        dry_run: dryRun,
       };
 
       if (selectedEntityId) {
         payload.entity_id = Number(selectedEntityId);
       } else {
-        payload.external_id = externalId.trim() || 'entity_' + Date.now();
+        payload.external_id = externalId.trim() || 'bench_' + Date.now();
         payload.entity_name = entityName.trim() || payload.external_id;
         payload.auto_create_entity = true;
       }
 
       const res = await api.ingest(payload);
       setResult(res);
-      await loadEntities();
+      setActiveClaimIdx(res.memories.length > 0 ? 0 : null);
+      notify(
+        dryRun
+          ? `Dry run simulated ${res.memories_extracted} claim(s) (no DB changes persisted)`
+          : `Extracted and persisted ${res.memories_extracted} claim(s)`,
+        'success'
+      );
+      if (!dryRun) {
+        await loadEntities();
+      }
     } catch (err: any) {
-      setError(err.message || 'Extraction failed');
+      notify(err.message || 'Extraction failed', 'error');
     } finally {
       setIsExtracting(false);
     }
+  };
+
+  const renderHighlightedInput = () => {
+    if (!result || activeClaimIdx === null || !result.memories[activeClaimIdx]) {
+      return null;
+    }
+    const mem = result.memories[activeClaimIdx];
+    const ev = mem.evidence && mem.evidence[0];
+    if (!ev || ev.char_start == null || ev.char_end == null) return null;
+    if (ev.char_start < 0 || ev.char_end > content.length || ev.char_start >= ev.char_end) {
+      return null;
+    }
+    const before = content.slice(0, ev.char_start);
+    const match = content.slice(ev.char_start, ev.char_end);
+    const after = content.slice(ev.char_end);
+    return (
+      <div style={{ marginTop: '14px' }}>
+        <div className="mono" style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px', textTransform: 'uppercase' }}>
+          Verified Character Span Preview [{ev.char_start}:{ev.char_end}]
+        </div>
+        <div className="episode-reader" style={{ maxHeight: '180px' }}>
+          <span>{before}</span>
+          <mark className="evidence-mark verified">{match}</mark>
+          <span>{after}</span>
+        </div>
+      </div>
+    );
   };
 
   return (
     <div className="page-container">
       {/* Header */}
       <div className="page-header">
-        <h1 className="page-title">Extraction Lab & Playground</h1>
-        <p className="page-subtitle">
-          Test real-time extraction of structured facts, entity resolution, and confidence scoring on live text.
-        </p>
+        <div>
+          <div className="page-eyebrow">INTERACTIVE EXTRACTION SIMULATOR</div>
+          <h1 className="page-title">Extraction Bench</h1>
+          <p className="page-subtitle">
+            Test schema tag instructions, value coercion, and character-offset verification in Dry Run or Live Persist mode.
+          </p>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span className="mono" style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+            MODE:
+          </span>
+          <div className="segmented-control">
+            <button
+              type="button"
+              className={`segmented-option ${dryRun ? 'active' : ''}`}
+              onClick={() => setDryRun(true)}
+            >
+              Dry Run (Simulate Only)
+            </button>
+            <button
+              type="button"
+              className={`segmented-option ${!dryRun ? 'active' : ''}`}
+              onClick={() => setDryRun(false)}
+            >
+              Persist to Workspace
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* Preset Selector */}
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', alignItems: 'center', flexWrap: 'wrap' }}>
-        <span style={{ fontSize: '13px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <Zap size={14} color="var(--warning)" /> Load Demo Scenario:
+      {/* Preset Bar */}
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '18px', alignItems: 'center', flexWrap: 'wrap' }}>
+        <span className="mono" style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+          Sample Scenarios:
         </span>
-        {PLAYGROUND_PRESETS.map((preset) => (
+        {BENCH_PRESETS.map((preset) => (
           <button
             key={preset.title}
-            className="btn btn-secondary btn-sm"
+            type="button"
+            className="btn btn-secondary btn-xs"
             onClick={() => applyPreset(preset)}
           >
             {preset.title}
@@ -166,39 +224,28 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
         ))}
       </div>
 
-      {error && (
-        <div
-          style={{
-            padding: '12px 16px',
-            background: 'var(--danger-bg)',
-            color: 'var(--danger)',
-            borderRadius: 'var(--radius-sm)',
-            marginBottom: '20px',
-            fontSize: '14px',
-          }}
-        >
-          {error}
-        </div>
-      )}
-
-      {/* 2-Column Playground Layout */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.4fr', gap: '24px' }}>
+      {/* 2-Column Layout */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1.15fr 1.35fr', gap: '20px', alignItems: 'start' }}>
         {/* Left Column: Input Form */}
         <div className="card">
-          <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Bot size={18} color="var(--accent-primary)" />
-            Input Dialogue / Unstructured Source
-          </h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <h3 className="card-title" style={{ margin: 0 }}>
+              Source Transcript / Unstructured Input
+            </h3>
+            {dryRun && (
+              <span className="badge badge-info">DRY RUN — NO DB WRITES</span>
+            )}
+          </div>
 
           <form onSubmit={handleRunExtraction}>
             <div className="input-group">
-              <label className="input-label">Target Entity</label>
+              <label className="input-label">Target Profile</label>
               <select
                 className="input"
                 value={selectedEntityId}
                 onChange={(e) => setSelectedEntityId(e.target.value)}
               >
-                <option value="">-- Use Custom External ID below --</option>
+                <option value="">— Use Custom External ID below —</option>
                 {entities.map((ent) => (
                   <option key={ent.id} value={ent.id}>
                     {ent.name} ({ent.external_id})
@@ -213,14 +260,14 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
                   <label className="input-label">External ID</label>
                   <input
                     type="text"
-                    className="input"
+                    className="input mono"
                     value={externalId}
                     onChange={(e) => setExternalId(e.target.value)}
                     required
                   />
                 </div>
                 <div className="input-group">
-                  <label className="input-label">Entity Name</label>
+                  <label className="input-label">Profile Name</label>
                   <input
                     type="text"
                     className="input"
@@ -236,56 +283,35 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
                 <label className="input-label">Source Type</label>
                 <select
                   className="input"
-                  value={isCustomSourceType ? '__custom__' : sourceType}
-                  onChange={(e) => {
-                    if (e.target.value === '__custom__') {
-                      setIsCustomSourceType(true);
-                    } else {
-                      setIsCustomSourceType(false);
-                      setSourceType(e.target.value);
-                    }
-                  }}
+                  value={sourceType}
+                  onChange={(e) => setSourceType(e.target.value)}
                 >
                   {availableSourceTypes.map((st) => (
                     <option key={st} value={st}>
                       {st.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}
                     </option>
                   ))}
-                  <option value="__custom__">+ Define New Category...</option>
                 </select>
-                {isCustomSourceType && (
-                  <input
-                    type="text"
-                    className="input"
-                    style={{ marginTop: '6px' }}
-                    placeholder="e.g. reflection, journal, meeting"
-                    value={customSourceTypeInput}
-                    onChange={(e) => setCustomSourceTypeInput(e.target.value)}
-                    autoFocus
-                  />
-                )}
               </div>
 
               <div className="input-group">
-                <label className="input-label">Source Context</label>
+                <label className="input-label">Reference Note</label>
                 <input
                   type="text"
                   className="input"
                   value={sourceDescription}
                   onChange={(e) => setSourceDescription(e.target.value)}
-                  placeholder="e.g. Call transcript"
                 />
               </div>
             </div>
 
             <div className="input-group">
-              <label className="input-label">Content to Analyze</label>
+              <label className="input-label">Source Text</label>
               <textarea
                 className="input"
-                style={{ minHeight: '220px', fontSize: '13px', lineHeight: 1.6 }}
+                style={{ minHeight: '190px', fontSize: '13px', lineHeight: 1.55 }}
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
-                placeholder="Paste any conversation or unstructured text here..."
                 required
               />
             </div>
@@ -293,123 +319,172 @@ export const PlaygroundPage: React.FC<PlaygroundPageProps> = ({
             <button
               type="submit"
               className="btn btn-primary w-full"
-              style={{ justifyContent: 'center', height: '44px' }}
+              style={{ justifyContent: 'center', height: '38px' }}
               disabled={isExtracting || !content.trim()}
             >
               {isExtracting ? (
                 <>
-                  <Loader2 size={18} className="spinner" />
-                  <span>Extracting Claims with LLM...</span>
+                  <div className="spinner" style={{ borderTopColor: '#fff' }} />
+                  <span>Running Extraction &amp; Verification…</span>
                 </>
               ) : (
                 <>
-                  <Sparkles size={18} />
-                  <span>Extract & Resolve Memories</span>
+                  <Play size={14} />
+                  <span>
+                    {dryRun ? 'Simulate Extraction (Dry Run)' : 'Extract & Persist State'}
+                  </span>
                 </>
               )}
             </button>
           </form>
+
+          {renderHighlightedInput()}
         </div>
 
         {/* Right Column: Live Extraction Results */}
         <div className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <h3 className="card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Brain size={18} color="var(--success)" />
-              Extracted Knowledge Graph
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+            <h3 className="card-title" style={{ margin: 0 }}>
+              Extraction &amp; Schema Resolution Output
             </h3>
 
-            {result && (
+            {result && !result.dry_run && result.entity_id > 0 && (
               <button
-                className="btn btn-secondary btn-sm"
+                type="button"
+                className="btn btn-secondary btn-xs"
                 onClick={() => onSelectEntity(result.entity_id)}
               >
-                <span>View Full Profile</span>
-                <ExternalLink size={13} />
+                <span>Open Profile Ledger</span>
+                <ArrowUpRight size={12} />
               </button>
             )}
           </div>
 
           {result ? (
             <div>
-              {/* Summary Stats */}
+              {/* Compact Metric Strip */}
               <div
                 style={{
                   display: 'grid',
                   gridTemplateColumns: 'repeat(3, 1fr)',
                   gap: '10px',
-                  marginBottom: '20px',
+                  marginBottom: '16px',
                 }}
               >
-                <div style={{ padding: '12px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-sm)', textAlign: 'center' }}>
-                  <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--success)' }}>
+                <div style={{ padding: '10px 14px', background: 'var(--bg-well)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
+                  <div className="mono" style={{ fontSize: '20px', fontWeight: 600, color: 'var(--text-primary)' }}>
                     {result.memories_extracted}
                   </div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Claims Extracted</div>
+                  <div className="mono" style={{ fontSize: '10.5px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                    Claims Resolved
+                  </div>
                 </div>
 
-                <div style={{ padding: '12px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-sm)', textAlign: 'center' }}>
-                  <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--accent-primary-hover)' }}>
+                <div style={{ padding: '10px 14px', background: 'var(--bg-well)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
+                  <div className="mono" style={{ fontSize: '20px', fontWeight: 600, color: 'var(--success)' }}>
                     {result.memories_new}
                   </div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>New Memories</div>
+                  <div className="mono" style={{ fontSize: '10.5px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                    New Records
+                  </div>
                 </div>
 
-                <div style={{ padding: '12px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-sm)', textAlign: 'center' }}>
-                  <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--warning)' }}>
+                <div style={{ padding: '10px 14px', background: 'var(--bg-well)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
+                  <div className="mono" style={{ fontSize: '20px', fontWeight: 600, color: 'var(--info)' }}>
                     {result.memories_updated}
                   </div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Updated / Confirmed</div>
+                  <div className="mono" style={{ fontSize: '10.5px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                    Updated / Supported
+                  </div>
                 </div>
               </div>
 
-              {/* Memory Cards */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '520px', overflowY: 'auto' }}>
-                {result.memories.map((mem) => (
-                  <div
-                    key={mem.id}
-                    style={{
-                      padding: '16px',
-                      background: 'var(--bg-secondary)',
-                      borderRadius: 'var(--radius-sm)',
-                      border: '1px solid var(--border-subtle)',
-                    }}
+              {/* Compiled State JSON Preview */}
+              {result.state && Object.keys(result.state).length > 0 && (
+                <div style={{ marginBottom: '16px' }}>
+                  <div className="mono" style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px', textTransform: 'uppercase' }}>
+                    Compiled Deterministic State (intel.state)
+                  </div>
+                  <pre
+                    className="intel-preview"
+                    style={{ padding: '12px 14px', maxHeight: '140px', fontSize: '12px' }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
-                      <div style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)', flex: 1, paddingRight: '10px' }}>
+                    {JSON.stringify(result.state, null, 2)}
+                  </pre>
+                </div>
+              )}
+
+              {/* Extracted Claims List */}
+              <div className="mono" style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px', textTransform: 'uppercase' }}>
+                Extracted Atomic Claims (Click to highlight span)
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '440px', overflowY: 'auto' }}>
+                {result.memories.map((mem, idx) => {
+                  const ev = mem.evidence && mem.evidence[0];
+                  const isSelected = activeClaimIdx === idx;
+                  return (
+                    <div
+                      key={mem.id || idx}
+                      onClick={() => setActiveClaimIdx(idx)}
+                      style={{
+                        padding: '12px 14px',
+                        background: isSelected ? '#FDFCFA' : 'var(--bg-well)',
+                        borderRadius: 'var(--radius-sm)',
+                        border: `1px solid ${isSelected ? 'var(--text-primary)' : 'var(--border-subtle)'}`,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                          {mem.topic_name ? (
+                            <span className="tag-pill">
+                              <Tag size={10} />
+                              {mem.topic_name}
+                            </span>
+                          ) : (
+                            <span className="badge badge-neutral">open_discovery</span>
+                          )}
+                          {mem.value && <span className="value-pill">= {mem.value}</span>}
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          {ev?.is_verified ? (
+                            <span className="badge badge-success">
+                              <ShieldCheck size={11} />
+                              [{ev.char_start}:{ev.char_end}]
+                            </span>
+                          ) : (
+                            <span className="badge badge-warning">
+                              <AlertTriangle size={11} />
+                              Unverified
+                            </span>
+                          )}
+                          <span className={`badge ${mem.status === 'pending_review' ? 'badge-warning' : 'badge-info'}`}>
+                            {mem.status}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div style={{ fontWeight: 500, fontSize: '13.5px', color: 'var(--text-primary)' }}>
                         {mem.claim}
                       </div>
-                      <ConfidenceBar confidence={mem.confidence} />
-                    </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                      <span className="badge badge-success" style={{ fontSize: '11px' }}>
-                        {mem.status}
-                      </span>
-                      {mem.topic_name && (
-                        <span
-                          style={{
-                            fontSize: '11px',
-                            color: 'var(--accent-primary-hover)',
-                            background: 'rgba(99, 102, 241, 0.1)',
-                            padding: '2px 8px',
-                            borderRadius: '100px',
-                          }}
-                        >
-                          #{mem.topic_name}
-                        </span>
+                      {ev?.excerpt && (
+                        <div className="mono" style={{ marginTop: '6px', fontSize: '11.5px', color: 'var(--text-muted)' }}>
+                          &ldquo;{ev.excerpt}&rdquo;
+                        </div>
                       )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           ) : (
-            <div className="empty-state" style={{ padding: '80px 20px' }}>
-              <Sparkles className="empty-state-icon" />
-              <h4 className="empty-state-title">Ready for Extraction</h4>
+            <div className="empty-state" style={{ padding: '64px 20px' }}>
+              <FlaskConical className="empty-state-icon" />
+              <h4 className="empty-state-title">Ready to Simulate</h4>
               <p className="empty-state-text">
-                Select a scenario preset on the left or paste your own interaction, then click "Extract & Resolve Memories".
+                Select a clinical or enterprise preset on the left—or paste your own text—and click &ldquo;Simulate Extraction&rdquo;.
               </p>
             </div>
           )}

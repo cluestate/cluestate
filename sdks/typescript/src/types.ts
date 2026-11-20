@@ -85,12 +85,21 @@ export interface Entity {
 export interface Topic {
   id: number;
   name: string;
+  label?: string;
   description: string;
-  data_type: 'text' | 'number' | 'boolean' | 'enum' | 'list' | string;
+  extraction_instructions?: string;
+  examples?: unknown[];
+  data_type: 'text' | 'number' | 'boolean' | 'enum' | 'list' | 'single_select' | 'multi_select' | 'date' | string;
   cardinality: TopicCardinality;
   update_policy: UpdatePolicy;
   temporal: boolean;
+  ttl_days?: number | null;
   enum_values: string[];
+  allow_custom_values?: boolean;
+  allow_inferred?: boolean;
+  min_confidence?: number;
+  constraints?: Record<string, unknown>;
+  applies_to_entity_types?: string[];
   schema_version: number;
   is_active: boolean;
   created_at: string;
@@ -139,6 +148,8 @@ export interface IngestResponse {
   memories_updated: number;
   memories_new: number;
   idempotent_replay: boolean;
+  dry_run?: boolean;
+  state?: Record<string, unknown>;
   memories: Memory[];
 }
 
@@ -147,6 +158,7 @@ export interface IntelResponse {
   entity_name: string;
   entity_type: EntityType;
   formatted_prompt: string;
+  state: Record<string, unknown>;
   memories: Memory[];
   total_memories: number;
   total_episodes: number;

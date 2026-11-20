@@ -8,15 +8,18 @@
 
 Turn unstructured conversations, support tickets, clinical notes, and app events into **typed, schema-enforced, quote-verified profiles** in PostgreSQL or SQLite — **no vector database required.**
 
-[**Website (`cluestate.com`)**](https://cluestate.com) · [**Quickstart (60s)**](#quickstart-under-60-seconds) · [**Architecture**](docs/architecture.md) · [**Python SDK**](docs/python-sdk.md) · [**TypeScript SDK**](docs/typescript-sdk.md) · [**MCP Server**](#model-context-protocol-mcp-server)
+[**Start on ClueState Cloud (`cluestate.com`)**](https://cluestate.com) · [**Quickstart (60s)**](#quickstart-under-60-seconds) · [**Architecture**](docs/architecture.md) · [**Python SDK**](docs/python-sdk.md) · [**TypeScript SDK**](docs/typescript-sdk.md) · [**MCP Server**](#model-context-protocol-mcp-server)
 
-[![License](https://img.shields.io/badge/license-Apache%202.0-3D2CE0.svg)](LICENSE)
+[![ClueState Cloud](https://img.shields.io/badge/cloud-fully%20hosted%20at%20cluestate.com-3D2CE0.svg)](https://cluestate.com)
+[![License](https://img.shields.io/badge/license-Apache%202.0-12151C.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-v0.1.1-187D70.svg)](CHANGELOG.md)
 [![Python](https://img.shields.io/badge/python-3.11+-3776AB.svg)](docs/python-sdk.md)
 [![TypeScript](https://img.shields.io/badge/typescript-zero--dependency-3178C6.svg)](docs/typescript-sdk.md)
 [![Docker](https://img.shields.io/badge/docker-ready-2496ED.svg)](docker-compose.yml)
 
 </div>
+
+> **Want everything ready out of the box?** Use [**ClueState Cloud (`cluestate.com`)**](https://cluestate.com) — our fully hosted, managed platform with PostgreSQL, LLM extraction, Admin Console, multi-workspace teams, and instant `cs_live_...` API keys pre-configured. Self-host anytime with Apache 2.0.
 
 ---
 
@@ -76,7 +79,8 @@ Most teams integrate ClueState in under **5 minutes**. You only need two calls: 
 ```python
 from cluestate import ClueState
 
-cs = ClueState(api_key="cs_live_YOUR_API_KEY", base_url="http://localhost:8000")
+# Connects to ClueState Cloud by default (pass base_url="http://localhost:8000" if self-hosting)
+cs = ClueState(api_key="cs_live_YOUR_API_KEY")
 
 # 1. Ingest any conversation, ticket, email, or note
 cs.ingest(
@@ -100,10 +104,8 @@ Zero runtime dependencies — works in Node.js 18+, Bun, Deno, Cloudflare Worker
 ```typescript
 import { ClueState } from "@cluestate/sdk";
 
-const cs = new ClueState({
-  apiKey: process.env.CLUESTATE_API_KEY!,
-  baseUrl: "http://localhost:8000",
-});
+// Connects to ClueState Cloud by default (pass baseUrl: "http://localhost:8000" if self-hosting)
+const cs = new ClueState({ apiKey: process.env.CLUESTATE_API_KEY! });
 
 await cs.ingest({
   externalId: "cust_402",
@@ -145,7 +147,14 @@ curl http://localhost:8000/api/intel/by-external-id/cust_402 \
 
 ## Quickstart (Under 60 Seconds)
 
-### Option A — One-Command Local Install (SQLite)
+### Option A — ClueState Cloud (Fully Hosted, Zero Setup)
+
+Skip servers, databases, and LLM key management — start immediately at **[cluestate.com](https://cluestate.com)**:
+1. Sign up and create your workspace in seconds.
+2. Pick a starter schema pack (Clinical, Enterprise SaaS, or VIP Concierge) or define your own tags.
+3. Copy your `cs_live_...` API key — both the Python and TypeScript SDKs point to ClueState Cloud automatically with zero extra config.
+
+### Option B — Self-Host Locally (One Command, SQLite)
 
 ```bash
 pip install cluestate
@@ -153,7 +162,7 @@ cp .env.example .env   # Add OPENAI_API_KEY (or Anthropic / Gemini / Mistral / O
 cluestate serve
 ```
 
-### Option B — Production Stack with Docker Compose (PostgreSQL + Web UI)
+### Option C — Self-Host with Docker Compose (PostgreSQL + Web UI)
 
 ```bash
 git clone https://github.com/cluestate/cluestate.git && cd cluestate
@@ -161,7 +170,7 @@ cp .env.example .env   # Set OPENAI_API_KEY, POSTGRES_PASSWORD, SECRET_KEY
 docker compose up -d --build
 ```
 
-Open **`http://localhost:8000`** to create your first workspace, pick a starter schema pack (Clinical, Enterprise SaaS, or VIP Concierge) or define your own tags, and mint a scoped `cs_live_...` API key.
+Open **`http://localhost:8000`** to create your local workspace and mint a scoped `cs_live_...` API key.
 
 > **Deploying on Coolify, Railway, Render, or Fly.io?** ClueState ships with a production `Dockerfile`, automatic Alembic migrations on boot, and a `/api/health` readiness endpoint.
 

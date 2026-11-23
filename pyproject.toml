@@ -10,7 +10,10 @@ readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
 authors = [
-    { name = "Marko", email = "hello@cluestate.com" },
+    { name = "Marko Ruman", email = "hello@cluestate.com" },
+]
+maintainers = [
+    { name = "Marko Ruman", email = "hello@cluestate.com" },
 ]
 keywords = ["ai", "memory", "entity", "intelligence", "llm", "cluestate", "knowledge-extraction"]
 classifiers = [

@@ -2,6 +2,7 @@
   "name": "@cluestate/sdk",
   "version": "0.1.1",
   "description": "ClueState TypeScript SDK — Evidence-backed customer and entity intelligence infrastructure.",
+  "author": "Marko Ruman <hello@cluestate.com>",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/index.js",

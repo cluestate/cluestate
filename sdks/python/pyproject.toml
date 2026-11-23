@@ -10,7 +10,7 @@ readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.9"
 authors = [
-    { name = "Marko", email = "hello@cluestate.com" },
+    { name = "Marko Ruman", email = "hello@cluestate.com" },
 ]
 keywords = ["cluestate", "customer-intelligence", "entity-state", "sdk", "ai"]
 dependencies = [

@@ -55,7 +55,7 @@ Vector databases (RAG) and rolling LLM summaries break down the moment facts **c
 
 When a customer upgrades their budget from `$10k` to `$25k`, switches databases, or discloses a penicillin allergy on a photographed intake form:
 - **Vector RAG** retrieves *both* outdated and current chunks together and leaves the LLM guessing.
-- **Rolling Summaries** silently drop nuance, hallucinate inferences, and lose the original verbatim quote.
+- **Rolling Summaries** silently drop nuance, hallucinate inferences, and lose the original verbatim quote.[Quote](textBlock;label:Quote:ers%20evaluate%20software%20architecture%2C%20origina) 
 - **Neither** gives your backend typed fields (`boolean`, `number`, `date`, `enum`, `list`), state-filtered queries (`?where=known_allergies=penicillin`), or a human Review Queue.
 
 **ClueState separates probabilistic LLM extraction from deterministic database state:**
